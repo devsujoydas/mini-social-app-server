@@ -1,92 +1,84 @@
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
-const path = require('path');
 var cors = require('cors')
-
-const cookieParser = require('cookie-parser');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-
-const userModel = require('./models/user');
-const postModel = require('./models/post');
+require("dotenv").config()
 
 const app = express()
 const port = process.env.PORT || 3000
 
 app.use(cors());
 app.use(express.json())
-app.use(cookieParser())
-app.use(express.urlencoded({ extended: true }))
-app.use(express.static(path.join(__dirname, "public")))
 
-// ✅ All real routes here first
+
+
+// const uri = "mongodb://localhost:27017";
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.f1vo05q.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+
+const client = new MongoClient(uri, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
+});
+
+async function run() {
+    try {
+        await client.connect();
+        await client.db("userDB").command({ ping: 1 });
+        const userModel = client.db("mini-social-app").collection("users")
+
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
+
+        app.get("/updateInfo/:id", async (req, res) => {
+            const userEmail = req.params.id;
+            // console.log(userEmail)
+            // const user = await userModel.findOne({ email: userEmail })
+            // console.log(user)
+            res.send("Sams er bou")
+
+        });
+
+        app.put("/update", async (req, res) => {
+            const formData = req.body;
+            console.log(formData)
+
+            const query = { email: formData.email }
+            const options = { upsert: true }
+            const updatedUser = { $set: { name, username, email, password, profilephotourl, phone, website, posts } }
+            const result = await userModel.updateOne(query, updatedUser, options)
+            res.send(result)
+        })
+
+        app.post("/signup", async (req, res) => {
+            const formData = req.body;
+
+            const user = await userModel.findOne({ email: formData.email })
+            if (user) return res.send("This email was already taken")
+
+            const username = await userModel.findOne({ username: formData.username })
+            if (username) return res.send("This username was already taken")
+
+            const result = await userModel.insertOne(formData)
+            res.send(result).console.log("Account Created Successfully")
+        })
+
+
+
+
+    }
+
+    finally {
+        // await client.close();
+    }
+}
+run().catch(console.dir);
+
+
 app.get("/", (req, res) => {
     res.send("Hello");
 });
-
-app.get("/profile", isLoggedIn, async (req, res) => {
-    let user = await userModel.findOne({ email: req.user.email }).populate("posts");
-    res.send({ user })
-})
-
-
-app.post("/signup", async (req, res) => {
-    let { firstName, lastName, username, phone, email, password } = req.body;
-
-    let user = await userModel.findOne({ email })
-    if (user) return res.status(500).send("User already Registered");
-
-    let userName = await userModel.findOne({ username })
-    if (userName) return res.send("This Username is already taken");
-
-    bcrypt.genSalt(10, (err, salt) => {
-        bcrypt.hash(password, salt, async (err, hash) => {
-            let createdUser = await userModel.create({ firstName, lastName, username, phone, email, password: hash })
-        })
-    })
-})
-
-
-app.post("/login", async (req, res) => {
-    let { email, password } = req.body;
-
-    let user = await userModel.findOne({ email })
-    if (!user) return res.status(500).send("Something is Wrong");
-
-    bcrypt.compare(password, user.password, async (err, result) => {
-        if (result) {
-            let token = jwt.sign({ email, userid: user._id }, "secretekey")
-            res.cookie("token", token)
-            res.status(200)
-        }
-        else {
-            res.status(400).send("Something is wrong")
-        }
-    })
-})
-
-app.post("/logout", (req, res) => {
-    res.cookie("token", "")
-})
-
-
-
-// ❌ This must come LAST
-app.use((req, res) => {
-    res.status(404).json({ error: "Not Found" });
-});
-
-
-function isLoggedIn(req, res, next) {
-    if (req.cookies.token === "") {
-        res.redirect("/login")
-    }
-    else {
-        let data = jwt.verify(req.cookies.token, "secretekey")
-        req.user = data;
-        next()
-    }
-}
-
 
 app.listen(port, () => {
     console.log(`Server is running on port: ${port}`)
