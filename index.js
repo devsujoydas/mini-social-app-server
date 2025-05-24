@@ -38,7 +38,8 @@ async function run() {
             const username = await userModel.findOne({ username: formData.username })
             if (username) return res.send("This username was already taken")
             const result = await userModel.insertOne(formData)
-            res.send(result).console.log("Account Created Successfully")
+            // console.log("Account Created Successfully")
+            res.send(result)
         })
 
         app.get("/profile/:id", async (req, res) => {
@@ -66,7 +67,6 @@ async function run() {
         })
 
 
-
         app.get("/post", async (req, res) => {
             const posts = await postModel.find().sort({ createdDate: -1 }).toArray();
             res.send(posts)
@@ -75,7 +75,7 @@ async function run() {
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
-            console.log(post)
+            // console.log(post)
             res.send(post)
         });
 
@@ -85,9 +85,37 @@ async function run() {
             if (post) return res.send("This Image URL was already taken")
             const result = await postModel.insertOne(postData)
             if (!result) return
-            console.log("Post Upload Successfully")
+            // console.log("Post Upload Successfully")
             const data = { result, postData }
             res.send(data)
+        })
+
+
+        app.get("/post/update/:id", async (req, res) => {
+            const id = req.params.id;
+            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        })
+
+        app.put("/post/update/:id", async (req, res) => {
+            const { postImageUrl, postContent, lastUpdateDate } = req.body;
+
+            const id = req.params.id;
+            const post = await postModel.findOne({ _id: new ObjectId(id) })
+
+            const query = { postImageUrl }
+            const updatedPost = { $set: { postContent, lastUpdateDate } }
+            const result = await postModel.updateMany(query, updatedPost)
+            res.send(result)
+
+            console.log(result)
+
+        })
+        app.delete("/post/delete/:id", async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await postModel.deleteOne(query)
+            res.send(result)
         })
 
     }
@@ -101,6 +129,83 @@ run().catch(console.dir);
 
 app.get("/", (req, res) => {
     res.send("Hello This Is Mini-Social-App by XENON MEDIA");
+});
+
+const friends = [
+    {
+        name: "Shawan Chakraborty",
+        username: "shawoncb",
+        imgURL: "/shawon.jpg"
+    },
+    {
+        name: "Shadmaun Ahamed",
+        username: "siamahmed",
+        imgURL: "/shadmaun.jpg"
+    },
+    {
+        name: "Kamrul Hasan Chad",
+        username: "kamrul",
+        imgURL: "/kamrul.jpg"
+    },
+    {
+        name: "Sakhawatul Islam",
+        username: "sakhawatul",
+        imgURL: "/sakhawatul.jpg"
+    },
+    {
+        name: "Imran Siddik",
+        username: "zihan",
+        imgURL: "/imran.jpg"
+    },
+    {
+        name: "Md Ahadul Islam",
+        username: "devahadul",
+        imgURL: "/ahadul.jpg"
+    },
+    {
+        name: "Maksudur Rahman",
+        username: "devmaksudur",
+        imgURL: "/maksudur.jpg"
+    },
+    {
+        name: "Enamul Hoque ",
+        username: "devenamul",
+        imgURL: "/enamul.jpg"
+    },
+    {
+        name: "Kawsar Kabir",
+        username: "devkawsarkabir",
+        imgURL: "/kawsar.jpg"
+    },
+    {
+        name: "Md Kausar Ahammed",
+        username: "devkausarahammed",
+        imgURL: "/kausar.jpg"
+    },
+    {
+        name: "Mubarok Hossain",
+        username: "devmubarok",
+        imgURL: "/mubarok.jpg"
+    },
+    {
+        name: "AH Arman Khan",
+        username: "devarmankhan",
+        imgURL: "/arman.jpg"
+    },
+    {
+        name: "Aznan Tamim",
+        username: "devtamim",
+        imgURL: "/tamim.jpg"
+    },
+    {
+        name: "MD Sohan",
+        username: "devsohan",
+        imgURL: "/sohan.jpg"
+    },
+]
+
+app.get("/friends", (req, res) => {
+    res.send(friends)
 });
 
 app.listen(port)
