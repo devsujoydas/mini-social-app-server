@@ -3,6 +3,7 @@ const express = require('express');
 var cors = require('cors')
 require("dotenv").config()
 
+const Friends = require('./public/Friends.json');
 const app = express()
 const port = process.env.PORT || 3000
 
@@ -129,83 +130,16 @@ run().catch(console.dir);
 
 app.get("/", (req, res) => {
     res.send("Hello This Is Mini-Social-App by XENON MEDIA");
-});
-
-const friends = [
-    {
-        name: "Shawan Chakraborty",
-        username: "shawoncb",
-        imgURL: "/shawon.jpg"
-    },
-    {
-        name: "Shadmaun Ahamed",
-        username: "siamahmed",
-        imgURL: "/shadmaun.jpg"
-    },
-    {
-        name: "Kamrul Hasan Chad",
-        username: "kamrul",
-        imgURL: "/kamrul.jpg"
-    },
-    {
-        name: "Sakhawatul Islam",
-        username: "sakhawatul",
-        imgURL: "/sakhawatul.jpg"
-    },
-    {
-        name: "Imran Siddik",
-        username: "zihan",
-        imgURL: "/imran.jpg"
-    },
-    {
-        name: "Md Ahadul Islam",
-        username: "devahadul",
-        imgURL: "/ahadul.jpg"
-    },
-    {
-        name: "Maksudur Rahman",
-        username: "devmaksudur",
-        imgURL: "/maksudur.jpg"
-    },
-    {
-        name: "Enamul Hoque ",
-        username: "devenamul",
-        imgURL: "/enamul.jpg"
-    },
-    {
-        name: "Kawsar Kabir",
-        username: "devkawsarkabir",
-        imgURL: "/kawsar.jpg"
-    },
-    {
-        name: "Md Kausar Ahammed",
-        username: "devkausarahammed",
-        imgURL: "/kausar.jpg"
-    },
-    {
-        name: "Mubarok Hossain",
-        username: "devmubarok",
-        imgURL: "/mubarok.jpg"
-    },
-    {
-        name: "AH Arman Khan",
-        username: "devarmankhan",
-        imgURL: "/arman.jpg"
-    },
-    {
-        name: "Aznan Tamim",
-        username: "devtamim",
-        imgURL: "/tamim.jpg"
-    },
-    {
-        name: "MD Sohan",
-        username: "devsohan",
-        imgURL: "/sohan.jpg"
-    },
-]
+})
 
 app.get("/friends", (req, res) => {
-    res.send(friends)
+    res.send(Friends)
+});
+
+app.get("/profiles/:id", (req, res) => {
+    const username = req.params.id;
+    const friend = Friends.filter(Friend => Friend.username == username)
+    res.send(friend)
 });
 
 app.listen(port)
