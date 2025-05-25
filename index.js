@@ -12,8 +12,8 @@ app.use(express.json())
 
 
 
-const uri = "mongodb://localhost:27017";
-// const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.f1vo05q.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
+// const uri = "mongodb://localhost:27017";
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.f1vo05q.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
     serverApi: {
@@ -25,8 +25,8 @@ const client = new MongoClient(uri, {
 
 async function run() {
     try {
-        await client.connect();
-        await client.db("mini-social-app").command({ ping: 1 });
+        // await client.connect();
+        // await client.db("mini-social-app").command({ ping: 1 });
 
         const userModel = client.db("mini-social-app").collection("users")
         const postModel = client.db("mini-social-app").collection("posts")
@@ -39,13 +39,11 @@ async function run() {
             const username = await userModel.findOne({ username: formData.username })
             if (username) return res.send("This username was already taken")
             const result = await userModel.insertOne(formData)
-            // console.log("Account Created Successfully")
             res.send(result)
         })
 
         app.get("/profile/:id", async (req, res) => {
             const userEmail = req.params.id;
-            // console.log(userEmail)
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
         });
@@ -66,17 +64,23 @@ async function run() {
             const result = await userModel.updateMany(query, updatedUser)
             res.send(result)
         })
+        // vercel --prod
+
+        app.get("/vercelconnect", (req, res) => {
+
+            res.send("vercel connect hoise")
+        });
 
 
-        app.get("/post", async (req, res) => {
+        app.get("/posts", async (req, res) => {
             const posts = await postModel.find().sort({ createdDate: -1 }).toArray();
+            console.log(posts)
             res.send(posts)
         });
 
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
-            // console.log(post)
             res.send(post)
         });
 
@@ -112,12 +116,23 @@ async function run() {
             console.log(result)
 
         })
+
         app.delete("/post/delete/:id", async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
             const result = await postModel.deleteOne(query)
             res.send(result)
         })
+
+        app.get("/friends", (req, res) => {
+            res.send(Friends)
+        });
+
+        app.get("/profiles/:id", (req, res) => {
+            const username = req.params.id;
+            const friend = Friends.filter(Friend => Friend.username == username)
+            res.send(friend)
+        });
 
     }
 
@@ -132,15 +147,6 @@ app.get("/", (req, res) => {
     res.send("Hello This Is Mini-Social-App by XENON MEDIA");
 })
 
-app.get("/friends", (req, res) => {
-    res.send(Friends)
-});
-
-app.get("/profiles/:id", (req, res) => {
-    const username = req.params.id;
-    const friend = Friends.filter(Friend => Friend.username == username)
-    res.send(friend)
-});
 
 app.listen(port)
 
