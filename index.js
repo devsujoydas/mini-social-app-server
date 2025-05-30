@@ -32,15 +32,13 @@ async function run() {
         const postModel = client.db("mini-social-app").collection("posts")
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
+
         app.post("/signup", async (req, res) => {
             const formData = req.body;
-            const user = await userModel.findOne({ email: formData.email })
-            if (user) return res.send("This email was already taken")
-            const username = await userModel.findOne({ username: formData.username })
-            if (username) return res.send("This username was already taken")
             const result = await userModel.insertOne(formData)
             res.send(result)
         })
+
 
         app.get("/profile/:id", async (req, res) => {
             const userEmail = req.params.id;
@@ -58,24 +56,40 @@ async function run() {
 
 
         app.put("/update", async (req, res) => {
-            const { name, username, email, address, profilephotourl, createdDate, phone, website } = req.body;
+            const { name, username, email, address, profilephotourl, coverphotourl, createdDate, phone, website } = req.body;
             const query = { email }
-            const updatedUser = { $set: { name, username, address, createdDate, profilephotourl, phone, website } }
+            const updatedUser = { $set: { name, username, address, createdDate, profilephotourl, coverphotourl, phone, website } }
             const result = await userModel.updateMany(query, updatedUser)
             res.send(result)
         })
+
+
+        app.delete("/profile/delete/:id", async (req, res) => {
+            const email = req.params.id;
+            const query = { email: email }
+            const result = await userModel.deleteOne(query)
+            res.send(result)
+        })
+
         // vercel --prod
 
-        app.get("/vercelconnect", (req, res) => {
 
-            res.send("vercel connect hoise")
-        });
 
+        // app.get("/posts", async (req, res) => {
+        //     const posts = await postModel.find().sort({ createdDate: -1 }).toArray();
+        //     res.send(posts)
+        // });
 
         app.get("/posts", async (req, res) => {
-            const posts = await postModel.find().sort({ createdDate: -1 }).toArray();
-            console.log(posts)
-            res.send(posts)
+            try {
+                const posts = await postModel.aggregate([
+                    { $sample: { size: await postModel.countDocuments() } }
+                ]).toArray(); // toArray() abar byabohar korte hobe
+                res.send(posts);
+            } catch (error) {
+                console.error("Error getting random posts:", error);
+                res.status(500).send("Failed to fetch random posts");
+            }
         });
 
         app.get("/post/:id", async (req, res) => {
@@ -83,18 +97,27 @@ async function run() {
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
+ 
 
         app.post("/post", async (req, res) => {
-            const postData = req.body;
-            const post = await postModel.findOne({ postImageUrl: postData.postImageUrl })
-            if (post) return res.send("This Image URL was already taken")
-            const result = await postModel.insertOne(postData)
-            if (!result) return
-            // console.log("Post Upload Successfully")
-            const data = { result, postData }
-            res.send(data)
-        })
+            const postData = req.body; 
 
+            const existingPost = await postModel.findOne({ postImageUrl: postData.postImageUrl });
+            if (existingPost) return res.status(409).send("This Image URL was already taken");
+
+            const result = await postModel.insertOne(postData); 
+
+            const newPostId = result.insertedId;
+            const userEmail = postData.authorEmail;
+
+            const userUpdateResult = await userModel.updateOne({ email: userEmail }, { $push: { posts: newPostId } });
+            
+
+            const data = { result, userUpdateResult }
+            console.log(data)
+            res.send(data)
+
+        });
 
         app.get("/post/update/:id", async (req, res) => {
             const id = req.params.id;
@@ -107,14 +130,11 @@ async function run() {
 
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
-
             const query = { postImageUrl }
             const updatedPost = { $set: { postContent, lastUpdateDate } }
             const result = await postModel.updateMany(query, updatedPost)
             res.send(result)
-
-            console.log(result)
-
+            // console.log(result)
         })
 
         app.delete("/post/delete/:id", async (req, res) => {
@@ -124,8 +144,9 @@ async function run() {
             res.send(result)
         })
 
-        app.get("/friends", (req, res) => {
-            res.send(Friends)
+        app.get("/friends", async (req, res) => {
+            const friends = await userModel.find().toArray();
+            res.send(friends)
         });
 
         app.get("/profiles/:id", (req, res) => {
@@ -133,7 +154,6 @@ async function run() {
             const friend = Friends.filter(Friend => Friend.username == username)
             res.send(friend)
         });
-
     }
 
     finally {
