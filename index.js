@@ -33,12 +33,13 @@ async function run() {
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
 
+        // user 
+
         app.post("/signup", async (req, res) => {
             const formData = req.body;
             const result = await userModel.insertOne(formData)
             res.send(result)
         })
-
 
         app.get("/profile/:id", async (req, res) => {
             const userEmail = req.params.id;
@@ -46,14 +47,11 @@ async function run() {
             res.send(user)
         });
 
-
         app.get("/updateInfo/:id", async (req, res) => {
             const userEmail = req.params.id;
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
         });
-
-
 
         app.put("/update", async (req, res) => {
             const { name, username, email, address, profilephotourl, coverphotourl, createdDate, phone, website } = req.body;
@@ -63,7 +61,6 @@ async function run() {
             res.send(result)
         })
 
-
         app.delete("/profile/delete/:id", async (req, res) => {
             const email = req.params.id;
             const query = { email: email }
@@ -71,20 +68,14 @@ async function run() {
             res.send(result)
         })
 
-        // vercel --prod
 
-
-
-        // app.get("/posts", async (req, res) => {
-        //     const posts = await postModel.find().sort({ createdDate: -1 }).toArray();
-        //     res.send(posts)
-        // });
+        // posts 
 
         app.get("/posts", async (req, res) => {
             try {
                 const posts = await postModel.aggregate([
                     { $sample: { size: await postModel.countDocuments() } }
-                ]).toArray(); // toArray() abar byabohar korte hobe
+                ]).toArray();
                 res.send(posts);
             } catch (error) {
                 console.error("Error getting random posts:", error);
@@ -97,24 +88,23 @@ async function run() {
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
- 
 
         app.post("/post", async (req, res) => {
-            const postData = req.body; 
+            const postData = req.body;
 
             const existingPost = await postModel.findOne({ postImageUrl: postData.postImageUrl });
             if (existingPost) return res.status(409).send("This Image URL was already taken");
 
-            const result = await postModel.insertOne(postData); 
+            const result = await postModel.insertOne(postData);
 
             const newPostId = result.insertedId;
             const userEmail = postData.authorEmail;
 
             const userUpdateResult = await userModel.updateOne({ email: userEmail }, { $push: { posts: newPostId } });
-            
+
 
             const data = { result, userUpdateResult }
-            console.log(data)
+            // console.log(data)
             res.send(data)
 
         });
@@ -144,15 +134,24 @@ async function run() {
             res.send(result)
         })
 
+
+
+        // friends 
+
         app.get("/friends", async (req, res) => {
             const friends = await userModel.find().toArray();
             res.send(friends)
         });
 
-        app.get("/profiles/:id", (req, res) => {
+        app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
-            const friend = Friends.filter(Friend => Friend.username == username)
-            res.send(friend)
+            const friend = await userModel.findOne({ username })
+            const posts = await postModel.find().toArray()
+            const friendPost = posts.filter(post => post.authorUsername == friend.username) 
+
+            const data = {friend, friendPost}
+            res.send(data)
+ 
         });
     }
 
