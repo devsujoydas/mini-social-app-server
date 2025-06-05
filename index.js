@@ -35,10 +35,30 @@ async function run() {
 
         // user 
 
+
+
         app.post("/signup", async (req, res) => {
             const formData = req.body;
+            const user = await userModel.findOne({ email: formData.email })
+            if(user) return res.send({data:"User already existed"})
             const result = await userModel.insertOne(formData)
             res.send(result)
+        })
+
+        app.post("/signinwithgoogle", async (req, res) => {
+            const formData = req.body;
+
+            const user = await userModel.findOne({ email: formData.email })
+
+            console.log(user)
+            // if (!user) {
+            //     const result = await userModel.insertOne(formData)
+            //     res.send(result)
+            // }
+            // if (user == null) {
+
+            //     res.send("User Not Found")
+            // }
         })
 
         app.get("/profile/:id", async (req, res) => {
@@ -54,9 +74,10 @@ async function run() {
         });
 
         app.put("/update", async (req, res) => {
-            const { name, username, email, address, profilephotourl, coverphotourl, createdDate, phone, website } = req.body;
+            const { name, username, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
+
             const query = { email }
-            const updatedUser = { $set: { name, username, address, createdDate, profilephotourl, coverphotourl, phone, website } }
+            const updatedUser = { $set: { name, username, address, bio, profilephotourl, coverphotourl, phone, website } }
             const result = await userModel.updateMany(query, updatedUser)
             res.send(result)
         })
@@ -84,6 +105,12 @@ async function run() {
         });
 
         app.get("/post/:id", async (req, res) => {
+            const id = req.params.id;
+            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        });
+
+        app.get("/profile/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -127,32 +154,87 @@ async function run() {
             // console.log(result)
         })
 
-        app.delete("/post/delete/:id", async (req, res) => {
-            const id = req.params.id;
-            const query = { _id: new ObjectId(id) }
-            const result = await postModel.deleteOne(query)
-            res.send(result)
-        })
+        // app.delete("/post/delete/:id", async (req, res) => {
+        //     const id = req.params.id;
+        //     const query = { _id: new ObjectId(id) }
+        //     const post = await postModel.findOne(query)
+        //     const user = await userModel.findOne({ email: post.authorEmail })
 
+        //     const userUpdateResult = await userModel.updateOne({ email: userEmail }, { $pop: { posts: post._id } });
+
+        //     if (!userUpdateResult) return
+
+        //     const result = await postModel.deleteOne(query)
+        //     res.send(result)
+        // })
+
+        app.delete("/post/delete/:id", async (req, res) => {
+            const postId = req.params.id;
+
+            try {
+                const query = { _id: new ObjectId(postId) };
+
+                const post = await postModel.findOne(query);
+                if (!post) {
+                    return res.status(404).send({ message: "Post not found." });
+                }
+
+                const authorEmail = post.authorEmail;
+                if (!authorEmail) {
+                    console.warn(`Post ${postId} does not have an authorEmail. Cannot update user's posts array.`);
+                }
+
+                let userUpdateSuccess = false;
+                if (authorEmail) {
+                    try {
+                        const userUpdateResult = await userModel.updateOne(
+                            { email: authorEmail },
+                            { $pull: { posts: post._id } }
+                        );
+
+                        if (userUpdateResult.modifiedCount > 0) {
+                            // console.log(`User ${authorEmail}'s posts array updated. Removed post ID: ${post._id}`);
+                            userUpdateSuccess = true;
+                        } else {
+                            // console.warn(`User ${authorEmail} found but post ID ${post._id} was not removed from their posts array (maybe already removed or not present).`);
+                        }
+                    } catch (updateError) {
+                        console.error(`Error updating user ${authorEmail}'s posts array:`, updateError);
+                    }
+                }
+
+                const deleteResult = await postModel.deleteOne(query);
+
+                if (deleteResult.deletedCount === 0) {
+                    return res.status(500).send({ message: "Failed to delete post from database." });
+                }
+
+                // console.log(`Post ${postId} deleted successfully.`);
+
+                res.send(deleteResult)
+
+            } catch (error) {
+                // console.error("Error during post deletion process:", error);
+                res.status(500).send({ message: "An internal server error occurred." });
+            }
+        })
 
 
         // friends 
 
         app.get("/friends", async (req, res) => {
-            const friends = await userModel.find().toArray();
-            res.send(friends)
-        });
+            const allfriends = await userModel.find().toArray();
+            res.send(allfriends)
+        })
 
         app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
             const posts = await postModel.find().toArray()
-            const friendPost = posts.filter(post => post.authorUsername == friend.username) 
-
-            const data = {friend, friendPost}
+            const friendPost = posts.filter(post => post.authorUsername == friend.username)
+            const data = { friend, friendPost }
             res.send(data)
- 
-        });
+        })
     }
 
     finally {
