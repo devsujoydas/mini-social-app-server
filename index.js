@@ -235,6 +235,14 @@ async function run() {
             const data = { friend, friendPost }
             res.send(data)
         })
+        app.get("/message/:id", async (req, res) => {
+            const username = req.params.id;
+            const friend = await userModel.findOne({ username })
+            const posts = await postModel.find().toArray()
+            const friendPost = posts.filter(post => post.authorUsername == friend.username)
+            const data = { friend, friendPost }
+            res.send(data)
+        })
     }
 
     finally {
