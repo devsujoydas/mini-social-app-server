@@ -35,15 +35,15 @@ async function run() {
 
         // user 
 
-
-
         app.post("/signup", async (req, res) => {
             const formData = req.body;
             const user = await userModel.findOne({ email: formData.email })
-            if(user) return res.send({data:"User already existed"})
+            if (user) return res.send({ data: "User already existed" })
             const result = await userModel.insertOne(formData)
             res.send(result)
         })
+
+
 
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
@@ -76,10 +76,23 @@ async function run() {
         app.put("/update", async (req, res) => {
             const { name, username, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
 
-            const query = { email }
-            const updatedUser = { $set: { name, username, address, bio, profilephotourl, coverphotourl, phone, website } }
-            const result = await userModel.updateMany(query, updatedUser)
-            res.send(result)
+            const user = await userModel.findOne({ username: username })
+            if (user == null) {
+                const query = { email }
+                const updatedUser = { $set: { name, username, address, bio, profilephotourl, coverphotourl, phone, website } }
+                const result = await userModel.updateMany(query, updatedUser)
+                res.send(result)
+                return 
+            }
+
+            if (username === user.username) {
+                return res.send({ message: "This username already existed" })
+            }
+
+
+
+
+
         })
 
         app.delete("/profile/delete/:id", async (req, res) => {
