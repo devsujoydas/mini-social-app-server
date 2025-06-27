@@ -47,18 +47,18 @@ async function run() {
 
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
+            if (!formData.email) return res.send({ message: "Enter a valid email" })
 
             const user = await userModel.findOne({ email: formData.email })
 
-            console.log(user)
-            // if (!user) {
-            //     const result = await userModel.insertOne(formData)
-            //     res.send(result)
-            // }
-            // if (user == null) {
+            if (user) return res.send(formData)
 
-            //     res.send("User Not Found")
-            // }
+            if (user == null) {
+                const result = await userModel.insertOne(formData)
+                res.send(formData)
+            }
+
+
         })
 
         app.get("/profile/:id", async (req, res) => {
@@ -74,25 +74,28 @@ async function run() {
         });
 
         app.put("/update", async (req, res) => {
-            const { name, username, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
+            const { name, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
+            const query = { email }
+            const updatedUser = { $set: { name, address, bio, profilephotourl, coverphotourl, phone, website } }
+            const result = await userModel.updateMany(query, updatedUser)
+            res.send(result)
+            return
 
+        })
+
+        app.put("/updateUsername", async (req, res) => {
+            const { email, username } = req.body;
             const user = await userModel.findOne({ username: username })
             if (user == null) {
                 const query = { email }
-                const updatedUser = { $set: { name, username, address, bio, profilephotourl, coverphotourl, phone, website } }
+                const updatedUser = { $set: { username } }
                 const result = await userModel.updateMany(query, updatedUser)
                 res.send(result)
-                return 
+                return
             }
-
             if (username === user.username) {
                 return res.send({ message: "This username already existed" })
             }
-
-
-
-
-
         })
 
         app.delete("/profile/delete/:id", async (req, res) => {
@@ -167,6 +170,37 @@ async function run() {
             // console.log(result)
         })
 
+
+        // app.put("/post/like/:id", async (req, res) => {
+        //     const { like, userId } = req.body
+        //     const id = req.params.id;
+        //     const post = await postModel.findOne({ _id: new ObjectId(id) })
+
+        //     if (post) {
+        //         console.log("Like Status:", like)
+        //         console.log("User ID:", userId)       
+        //         console.log("Post ID:", id)
+
+        //         const userLiked = post.likes.find((likedUserId) => { likedUserId === userId })
+
+        //         console.log(userLiked)
+
+        //         if (like == true) {
+        //             const postUpdateResult = await postModel.updateOne({ _id: new ObjectId(id) }, { $push: { likes: userId } });
+        //             console.log("Liked Succsessfully", postUpdateResult)
+        //             return
+        //         }
+
+        //         if (like == false) {
+        //             const postUpdateResult = await postModel.updateOne({ _id: new ObjectId(id) }, { $pull: { likes: userId } });
+        //             console.log("disliked Succsessfully", postUpdateResult)
+        //         }
+
+        //     }
+        // })
+
+
+
         // app.delete("/post/delete/:id", async (req, res) => {
         //     const id = req.params.id;
         //     const query = { _id: new ObjectId(id) }
@@ -180,6 +214,37 @@ async function run() {
         //     const result = await postModel.deleteOne(query)
         //     res.send(result)
         // })
+
+
+
+        app.put("/post/like/:id", async (req, res) => {
+            const { userId } = req.body;
+            const postId = req.params.id;
+
+            try {
+                const post = await postModel.findOne({ _id: new ObjectId(postId) });
+                if (!post) return res.status(404).json({ message: "Post not found" });
+
+                const likedUser = post.likes.find(likedUserId => likedUserId == userId);
+
+                if (likedUser) {
+                    const postDislikedUpdateResult = await postModel.updateOne({ _id: new ObjectId(postId) }, { $pull: { likes: userId } });
+                    console.log("Disliked successfully", postDislikedUpdateResult);
+                    return res.status(200).json({ message: "Disliked", result: postDislikedUpdateResult });
+
+                } else {
+                    const postlikedUpdateResult = await postModel.updateOne({ _id: new ObjectId(postId) }, { $push: { likes: userId } });
+                    console.log("Liked successfully", postlikedUpdateResult);
+                    return res.status(200).json({ message: "Liked", result: postlikedUpdateResult });
+                }
+
+            } catch (error) {
+                console.error("Error in like route:", error);
+                return res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
+
 
         app.delete("/post/delete/:id", async (req, res) => {
             const postId = req.params.id;
