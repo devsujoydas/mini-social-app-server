@@ -10,7 +10,8 @@ const app = express()
 const port = process.env.PORT || 3000
 
 app.use(cors({
-    origin: 'http://localhost:5173',
+    origin: 'https://xenonmedia.netlify.app',
+    // origin: 'http://localhost:5173',
     credentials: true
 }));
 
@@ -22,10 +23,7 @@ const logger = async (req, res, next) => {
     next()
 }
 
-
-
-
-
+ 
 // console.log(require("crypto").randomBytes(64).toString('hex'))
 
 
@@ -51,20 +49,14 @@ async function run() {
 
         const verifyToken = async (req, res, next) => {
             const token = req.cookies?.token;
-
             if (!token) return res.status(401).send({ message: "Unauthorized access" })
-
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) {
-                    // console.log(err)
+                if (err) { 
                     return res.status(401).send({ message: "Unauthorized access" })
-                }
-                // console.log("value of token", decoded)
+                } 
                 req.user = decoded
                 next()
             })
-
-
         }
 
         // Auth Related Apis 
@@ -75,8 +67,9 @@ async function run() {
 
             res.cookie("token", token, {
                 httpOnly: true,
-                secure: false,         // dev-এর জন্য false, production-এ true
-                sameSite: "Lax",       // বা "None" + `secure: true` যদি cross-origin হয়
+                secure: true,   
+                // secure: false,         
+                sameSite: "Lax",        
                 maxAge: 24 * 60 * 60 * 1000
             });
             res.send({ success: true });
@@ -90,7 +83,7 @@ async function run() {
             const result = await userModel.insertOne(formData)
             res.send(result)
         })
-
+    
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
             if (!formData.email) return res.send({ message: "Enter a valid email" })
@@ -102,10 +95,18 @@ async function run() {
             }
         })
 
+        app.post("/forgotPass", async (req, res) => {
+            const { email } = req.body;
+            const user = await userModel.findOne({ email })
+            if (!user) return res.send({ message: "User not found" })
+            return res.send({ message: "User found" })
+        })
+
         app.post("/logout", (req, res) => {
             res.clearCookie("token", {
                 httpOnly: true,
-                secure: false, 
+                // secure: false,
+                secure: true,
             });
             res.status(200).json({ message: "Logged out successfully" });
         });
@@ -159,7 +160,7 @@ async function run() {
 
         // Post Related Apis
 
-        app.get("/posts", verifyToken, logger, async (req, res) => {
+        app.get("/posts", logger, async (req, res) => {
 
             try {
                 const posts = await postModel.aggregate([
@@ -178,7 +179,7 @@ async function run() {
             res.send(post)
         });
 
-        app.get("/profile/post/:id", logger, verifyToken, async (req, res) => {
+        app.get("/profile/post/:id", logger, async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -200,7 +201,7 @@ async function run() {
 
         });
 
-        app.get("/post/update/:id", logger, verifyToken, async (req, res) => {
+        app.get("/post/update/:id", logger, async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -292,12 +293,12 @@ async function run() {
 
         // Friends Related Apis 
 
-        app.get("/friends", logger, verifyToken, async (req, res) => {
+        app.get("/friends", logger, async (req, res) => {
             const allfriends = await userModel.find().toArray();
             res.send(allfriends)
         })
 
-        app.get("/friends/:id", logger, verifyToken, async (req, res) => {
+        app.get("/friends/:id", logger, async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
             const posts = await postModel.find().toArray()
@@ -306,7 +307,7 @@ async function run() {
             res.send(data)
         })
 
-        app.get("/message/:id", logger, verifyToken, async (req, res) => {
+        app.get("/message/:id", logger, async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
             const posts = await postModel.find().toArray()
