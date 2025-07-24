@@ -3,30 +3,20 @@ const express = require('express');
 var cors = require('cors')
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-
 require("dotenv").config()
 
 const app = express()
 const port = process.env.PORT || 3000
 
+
 app.use(cors({
-    origin: 'https://xenonmedia.netlify.app',
-    // origin: 'http://localhost:5173',
+    origin: 'http://localhost:5173',
+    // ['https://xenonmedia.netlify.app', 'http://localhost:5173',],
     credentials: true
 }));
 
 app.use(express.json())
 app.use(cookieParser())
-
-const logger = async (req, res, next) => {
-    // console.log("Called", req.host, req.originalUrl)
-    next()
-}
-
- 
-// console.log(require("crypto").randomBytes(64).toString('hex'))
-
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.f1vo05q.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -51,25 +41,22 @@ async function run() {
             const token = req.cookies?.token;
             if (!token) return res.status(401).send({ message: "Unauthorized access" })
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) { 
+                if (err) {
                     return res.status(401).send({ message: "Unauthorized access" })
-                } 
+                }
                 req.user = decoded
                 next()
             })
         }
-
-        // Auth Related Apis 
-
         app.post("/jwt", async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
 
             res.cookie("token", token, {
                 httpOnly: true,
-                secure: true,   
-                // secure: false,         
-                sameSite: "Lax",        
+                // secure: true,
+                secure: false,
+                sameSite: "Lax",
                 maxAge: 24 * 60 * 60 * 1000
             });
             res.send({ success: true });
@@ -81,17 +68,18 @@ async function run() {
             const user = await userModel.findOne({ email: formData.email })
             if (user) return res.send({ data: "User already existed" })
             const result = await userModel.insertOne(formData)
-            res.send(result)
+            if (result) res.send(formData)
         })
-    
+
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
-            if (!formData.email) return res.send({ message: "Enter a valid email" })
+
             const user = await userModel.findOne({ email: formData.email })
-            if (user) return res.send(formData)
+            if (user) return res.send(user)
+
             if (user == null) {
                 const result = await userModel.insertOne(formData)
-                res.send(formData)
+                if (result) res.send(user)
             }
         })
 
@@ -113,13 +101,13 @@ async function run() {
 
 
         // User Related Apis
-        app.get("/profile/:id", logger, async (req, res) => {
+        app.get("/profile/:id", async (req, res) => {
             const userEmail = req.params.id;
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
         });
 
-        app.get("/updateInfo/:id", logger, async (req, res) => {
+        app.get("/updateInfo/:id", async (req, res) => {
             const userEmail = req.params.id;
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
@@ -141,7 +129,7 @@ async function run() {
             if (user == null) {
                 const query = { email }
                 const updatedUser = { $set: { username } }
-                const result = await userModel.updateMany(query, updatedUser)
+                const result = await userModel.updateOne(query, updatedUser)
                 res.send(result)
                 return
             }
@@ -160,7 +148,7 @@ async function run() {
 
         // Post Related Apis
 
-        app.get("/posts", logger, async (req, res) => {
+        app.get("/posts", async (req, res) => {
 
             try {
                 const posts = await postModel.aggregate([
@@ -173,13 +161,13 @@ async function run() {
             }
         });
 
-        app.get("/post/:id", logger, async (req, res) => {
+        app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
 
-        app.get("/profile/post/:id", logger, async (req, res) => {
+        app.get("/profile/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -201,7 +189,7 @@ async function run() {
 
         });
 
-        app.get("/post/update/:id", logger, async (req, res) => {
+        app.get("/post/update/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -293,12 +281,12 @@ async function run() {
 
         // Friends Related Apis 
 
-        app.get("/friends", logger, async (req, res) => {
+        app.get("/friends", async (req, res) => {
             const allfriends = await userModel.find().toArray();
             res.send(allfriends)
         })
 
-        app.get("/friends/:id", logger, async (req, res) => {
+        app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
             const posts = await postModel.find().toArray()
@@ -307,7 +295,7 @@ async function run() {
             res.send(data)
         })
 
-        app.get("/message/:id", logger, async (req, res) => {
+        app.get("/message/:id", async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
             const posts = await postModel.find().toArray()
@@ -329,7 +317,9 @@ app.get("/", (req, res) => {
 })
 
 
-app.listen(port)
+app.listen(port, () => {
+    console.log(port);
+})
 
 
 
