@@ -10,8 +10,9 @@ const port = process.env.PORT || 3000
 
 
 app.use(cors({
-    origin: 'http://localhost:5173',
-    // ['https://xenonmedia.netlify.app', 'http://localhost:5173',],
+    // origin: 'http://localhost:5173',
+    // origin: 'https://xenonmedia.netlify.app',
+    origin: ['https://xenonmedia.netlify.app', 'http://localhost:5173'],
     credentials: true
 }));
 
@@ -31,7 +32,7 @@ const userTimers = new Map();
 
 async function run() {
     try {
-        await client.connect();
+        // await client.connect();
         const userModel = client.db("mini-social-app").collection("users")
         const postModel = client.db("mini-social-app").collection("posts")
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -62,23 +63,23 @@ async function run() {
 
         })
         app.post("/activeStatus", async (req, res) => {
-            const { emailFromLS } = req.body;
-            if (!emailFromLS) return res.status(400).json({ message: "Email is required" });
+            const email = req.query.email;
+            if (!email) return res.status(400).json({ message: "Email is required" });
             try {
                 // 🟢 
-                const user = await userModel.findOne({ email: emailFromLS });
+                const user = await userModel.findOne({ email: email });
                 if (!user) return res.status(404).json({ message: "User not found" });
                 if (!user.onlineStatus) {
-                    await userModel.updateOne({ email: emailFromLS }, { $set: { onlineStatus: true } });
-                    console.log(`🟢 ${emailFromLS} marked online`);
+                    await userModel.updateOne({ email: email }, { $set: { onlineStatus: true } });
+                    console.log(`🟢 ${email} marked online`);
                 }
-                if (userTimers.has(emailFromLS)) { clearTimeout(userTimers.get(emailFromLS)); }
+                if (userTimers.has(email)) { clearTimeout(userTimers.get(email)); }
                 const timeout = setTimeout(async () => {
-                    await userModel.updateOne({ email: emailFromLS }, { $set: { onlineStatus: false } });
-                    userTimers.delete(emailFromLS);
-                    console.log(`⛔ ${emailFromLS} marked offline due to timeout`);
+                    await userModel.updateOne({ email: email }, { $set: { onlineStatus: false } });
+                    userTimers.delete(email);
+                    console.log(`⛔ ${email} marked offline due to timeout`);
                 }, 4000);
-                userTimers.set(emailFromLS, timeout);
+                userTimers.set(email, timeout);
                 res.status(200).json({ status: "online" });
             } catch (error) {
                 console.error("❌ activeStatus error:", error);
@@ -570,14 +571,15 @@ run().catch(console.dir);
 
 
 app.get("/", (req, res) => {
-    res.send("Hello This Is Mini-Social-App by XENON MEDIA");
+    res.send("XENON MEDIA v2");
 })
 
 
-app.listen(port, () => {
-    console.log(port);
-})
+// app.listen(port, () => {
+//     console.log(port);
+// })
 
+module.exports = app;
 
 
 
