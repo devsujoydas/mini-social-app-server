@@ -27,12 +27,11 @@ const client = new MongoClient(uri, {
         deprecationErrors: true,
     }
 });
+const userTimers = new Map();
 
 async function run() {
     try {
-        // await client.connect();
-        // await client.db("mini-social-app").command({ ping: 1 });
-
+        await client.connect();
         const userModel = client.db("mini-social-app").collection("users")
         const postModel = client.db("mini-social-app").collection("posts")
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -62,6 +61,31 @@ async function run() {
             res.send({ success: true });
 
         })
+        app.post("/activeStatus", async (req, res) => {
+            const { emailFromLS } = req.body;
+            if (!emailFromLS) return res.status(400).json({ message: "Email is required" });
+            try {
+                // 🟢 
+                const user = await userModel.findOne({ email: emailFromLS });
+                if (!user) return res.status(404).json({ message: "User not found" });
+                if (!user.onlineStatus) {
+                    await userModel.updateOne({ email: emailFromLS }, { $set: { onlineStatus: true } });
+                    console.log(`🟢 ${emailFromLS} marked online`);
+                }
+                if (userTimers.has(emailFromLS)) { clearTimeout(userTimers.get(emailFromLS)); }
+                const timeout = setTimeout(async () => {
+                    await userModel.updateOne({ email: emailFromLS }, { $set: { onlineStatus: false } });
+                    userTimers.delete(emailFromLS);
+                    console.log(`⛔ ${emailFromLS} marked offline due to timeout`);
+                }, 4000);
+                userTimers.set(emailFromLS, timeout);
+                res.status(200).json({ status: "online" });
+            } catch (error) {
+                console.error("❌ activeStatus error:", error);
+                res.status(500).json({ message: "Server error" });
+            }
+        });
+
 
         app.post("/signup", async (req, res) => {
             const formData = req.body;
@@ -70,7 +94,6 @@ async function run() {
             const result = await userModel.insertOne(formData)
             if (result) res.send(formData)
         })
-
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
 
@@ -82,14 +105,12 @@ async function run() {
                 if (result) res.send(user)
             }
         })
-
         app.post("/forgotPass", async (req, res) => {
             const { email } = req.body;
             const user = await userModel.findOne({ email })
             if (!user) return res.send({ message: "User not found" })
             return res.send({ message: "User found" })
         })
-
         app.post("/logout", (req, res) => {
             res.clearCookie("token", {
                 httpOnly: true,
@@ -106,13 +127,11 @@ async function run() {
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
         });
-
         app.get("/updateInfo/:id", async (req, res) => {
             const userEmail = req.params.id;
             const user = await userModel.findOne({ email: userEmail })
             res.send(user)
         });
-
         app.put("/update", async (req, res) => {
             const { name, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
             const query = { email }
@@ -122,7 +141,6 @@ async function run() {
             return
 
         })
-
         app.put("/updateUsername", async (req, res) => {
             const { email, username } = req.body;
             const user = await userModel.findOne({ username: username })
@@ -137,7 +155,6 @@ async function run() {
                 return res.send({ message: "This username already existed" })
             }
         })
-
         app.delete("/profile/delete/:id", async (req, res) => {
             const email = req.params.id;
             const query = { email: email }
@@ -147,9 +164,7 @@ async function run() {
 
 
         // Post Related Apis
-
         app.get("/posts", async (req, res) => {
-
             try {
                 const posts = await postModel.aggregate([
                     { $sample: { size: await postModel.countDocuments() } }
@@ -160,19 +175,16 @@ async function run() {
                 res.status(500).send("Failed to fetch random posts");
             }
         });
-
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
-
         app.get("/profile/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
-
         app.post("/post", async (req, res) => {
             const postData = req.body;
             const existingPost = await postModel.findOne({ postImageUrl: postData.postImageUrl });
@@ -188,13 +200,11 @@ async function run() {
             res.send(data)
 
         });
-
         app.get("/post/update/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postModel.findOne({ _id: new ObjectId(id) })
             res.send(post)
         })
-
         app.put("/post/update/:id", async (req, res) => {
             const { postImageUrl, postContent, lastUpdateDate } = req.body;
             const id = req.params.id;
@@ -205,7 +215,6 @@ async function run() {
             res.send(result)
             // console.log(result)
         })
-
         app.put("/post/like/:id", async (req, res) => {
             const { name, username, userId } = req.body;
             const postId = req.params.id;
@@ -241,7 +250,6 @@ async function run() {
                 return res.status(500).json({ message: "Internal server error" });
             }
         });
-
         app.delete("/post/delete/:id", async (req, res) => {
             const postId = req.params.id;
             try {
@@ -277,15 +285,186 @@ async function run() {
             } catch (error) {
                 res.status(500).send({ message: "An internal server error occurred." });
             }
-        })
+        });
 
-        // Friends Related Apis 
 
-        app.get("/friends", async (req, res) => {
-            const allfriends = await userModel.find().toArray();
-            res.send(allfriends)
-        })
+        // Friend related routes
+        app.put("/addfriend", async (req, res) => {
+            try {
+                const { userId, friendId } = req.body;
+                if (!userId || !friendId) return res.status(400).send("Invalid payload");
 
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                const user = await userModel.findOne({ _id: userObjId });
+                const friend = await userModel.findOne({ _id: friendObjId });
+
+                if (!user || !friend) {
+                    return res.status(404).json({ message: "User or Friend not found" });
+                }
+
+                // Check if friend already has a request from user
+                const alreadyRequested = friend.friendRequests?.some(
+                    (req) => req._id.toString() === userId
+                );
+
+                if (alreadyRequested) {
+                    await userModel.updateOne(
+                        { _id: friendObjId },
+                        { $pull: { friendRequests: { _id: userObjId } } }
+                    );
+                    await userModel.updateOne(
+                        { _id: userObjId },
+                        { $pull: { sentRequests: { _id: friendObjId } } }
+                    );
+                    return res.json({ message: "Friend request canceled" });
+
+                } else {
+                    // Prepare requestData object
+                    const requestDataForFriend = {
+                        _id: user._id,
+                        name: user.name,
+                        email: user.email,
+                        username: user.username,
+                        profilephotourl: user.profilephotourl,
+                    };
+
+                    const requestDataForUser = {
+                        _id: friend._id,
+                        name: friend.name,
+                        email: friend.email,
+                        username: friend.username,
+                        profilephotourl: friend.profilephotourl,
+                    };
+
+                    // Add requestData to friend's friendRequests
+                    await userModel.updateOne(
+                        { _id: friendObjId },
+                        { $addToSet: { friendRequests: requestDataForFriend } }
+                    );
+
+                    // Add friendData to user's sentRequests
+                    await userModel.updateOne(
+                        { _id: userObjId },
+                        { $addToSet: { sentRequests: requestDataForUser } }
+                    );
+
+                    return res.json({ message: "Friend request sent" });
+                }
+
+            } catch (error) {
+                console.error("Friend request error:", error);
+                return res.status(500).send("Server error");
+            }
+        });
+        app.put("/unfriend", async (req, res) => {
+            try {
+                const { userId, friendId } = req.body;
+                if (!userId || !friendId) return res.status(400).send("Invalid payload");
+
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                // Friend ও User এর full profile আনো
+                const user = await userModel.findOne({ _id: userObjId });
+                const friend = await userModel.findOne({ _id: friendObjId });
+
+                if (!user || !friend) return res.status(404).send("User or Friend not found");
+
+                // Unfriend user → Remove friend from user's myFriends
+                await userModel.updateOne(
+                    { _id: userObjId },
+                    { $pull: { myFriends: { _id: friend._id, email: friend.email, }, } }
+                );
+
+                // Unfriend friend → Remove user from friend's myFriends
+                await userModel.updateOne(
+                    { _id: friendObjId },
+                    { $pull: { myFriends: { _id: user._id, email: user.email, }, }, }
+                );
+
+                return res.status(200).json({ message: "Unfriend successful" });
+            } catch (error) {
+                console.error("Unfriend error:", error);
+                res.status(500).send("Server error");
+            }
+        });
+        app.put("/confirmFriend", async (req, res) => {
+            const { userId, friendId } = req.body;
+            if (!userId || !friendId) {
+                return res.status(400).json({ message: "Missing IDs" });
+            }
+            try {
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                const user = await userModel.findOne({ _id: userObjId });
+                const friend = await userModel.findOne({ _id: friendObjId });
+
+                if (!user || !friend) {
+                    return res.status(404).json({ message: "User or Friend not found" });
+                }
+                const friendRequest = user.friendRequests?.find(fr => fr._id.toString() === friendId);
+                if (!friendRequest) {
+                    return res.status(400).json({ message: "No friend request found" });
+                }
+                await userModel.updateOne(
+                    { _id: userObjId },
+                    { $pull: { friendRequests: { _id: friendObjId } } }
+                );
+                await userModel.updateOne(
+                    { _id: friendObjId },
+                    { $pull: { sentRequests: { _id: userObjId } } }
+                );
+                await userModel.updateOne(
+                    { _id: userObjId },
+                    {
+                        $addToSet: {
+                            myFriends: {
+                                _id: friend._id,
+                                name: friend.name,
+                                email: friend.email,
+                                username: friend.username,
+                                profilephotourl: friend.profilephotourl,
+                            }
+                        }
+                    }
+                );
+                await userModel.updateOne(
+                    { _id: friendObjId },
+                    {
+                        $addToSet: {
+                            myFriends: {
+                                _id: user._id,
+                                name: user.name,
+                                email: user.email,
+                                username: user.username,
+                                profilephotourl: user.profilephotourl,
+                            }
+                        }
+                    }
+                );
+                return res.status(200).json({ message: "Friend request accepted" });
+            } catch (error) {
+                console.error("Error in /confirmFriend route:", error);
+                return res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
+        app.get("/allfriends", async (req, res) => {
+            try {
+                const email = req.query.email;
+                if (!email) return res.status(400).send("Email missing");
+                const allUsersExceptMe = await userModel.find({
+                    email: { $ne: email }
+                }).toArray();
+                res.send(allUsersExceptMe);
+            } catch (error) {
+                console.error("Error in /allfriends route:", error);
+                res.status(500).send("Server error");
+            }
+        });
         app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
@@ -294,7 +473,6 @@ async function run() {
             const data = { friend, friendPost }
             res.send(data)
         })
-
         app.get("/message/:id", async (req, res) => {
             const username = req.params.id;
             const friend = await userModel.findOne({ username })
@@ -303,11 +481,90 @@ async function run() {
             const data = { friend, friendPost }
             res.send(data)
         })
+
+        app.get("/myfriends", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send("Email missing");
+            try {
+                const user = await userModel.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+                const myFriends = user.myFriends || [];
+                // Directly return the already stored friend objects
+                res.send(myFriends);
+            } catch (error) {
+                console.error("Error in /myfriends route:", error);
+                res.status(500).send("Server error");
+            }
+        });
+        app.get("/requests", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send("Email missing");
+            try {
+                const user = await userModel.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+                const requests = user.friendRequests || [];
+                res.send(requests);
+            } catch (error) {
+                console.error("Error in /requests route:", error);
+                res.status(500).send("Server error");
+            }
+        });
+        app.get("/sentrequest", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send("Email missing");
+            try {
+                const user = await userModel.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+                const sentRequests = user.sentRequests || [];
+                res.send(sentRequests);
+            } catch (error) {
+                console.error("Error in /sentrequest route:", error);
+                res.status(500).send("Server error");
+            }
+        });
+        app.get("/youMayKnow", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send("Email missing");
+            try {
+                const user = await userModel.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+                const allUsers = await userModel.find().toArray();
+                const myId = user._id.toString();
+                const myFriendIds = user.myFriends?.map(friend => friend._id.toString()) || [];
+                const friendRequestIds = user.friendRequests?.map(req => req._id.toString()) || [];
+                const sentRequestIds = user.sentRequests?.map(req => req._id.toString()) || [];
+                const youMayKnow = allUsers.filter(otherUser => {
+                    const otherId = otherUser._id.toString();
+                    return (
+                        otherId !== myId &&
+                        !myFriendIds.includes(otherId) &&
+                        !friendRequestIds.includes(otherId) &&
+                        !sentRequestIds.includes(otherId)
+                    );
+                });
+                res.send(youMayKnow);
+            } catch (error) {
+                console.error("Error in /youMayKnow route:", error);
+                res.status(500).send("Server error");
+            }
+        });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     }
 
-    finally {
-        // await client.close();
-    }
+    finally { }
 }
 run().catch(console.dir);
 
