@@ -4,15 +4,21 @@ var cors = require('cors')
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 require("dotenv").config()
+const multer = require("multer");
+const sharp = require("sharp");
+const axios = require("axios");
 
 const app = express()
 const port = process.env.PORT || 3000
+
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 
 app.use(cors({
     // origin: 'http://localhost:5173',
     // origin: 'https://xenonmedia.netlify.app',
-    origin: ['https://xenonmedia.netlify.app', 'http://localhost:5173'],
+    origin: ['https://xenonmedia.netlify.app', 'http://localhost:5173', "https://xenonmedia.vercel.app"],
     credentials: true
 }));
 
@@ -33,8 +39,8 @@ const userTimers = new Map();
 async function run() {
     try {
         // await client.connect();
-        const userModel = client.db("mini-social-app").collection("users")
-        const postModel = client.db("mini-social-app").collection("posts")
+        const usersCollection = client.db("mini-social-app").collection("users")
+        const postsCollection = client.db("mini-social-app").collection("posts")
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
         const verifyToken = async (req, res, next) => {
@@ -67,15 +73,15 @@ async function run() {
             if (!email) return res.status(400).json({ message: "Email is required" });
             try {
                 // 🟢 
-                const user = await userModel.findOne({ email: email });
+                const user = await usersCollection.findOne({ email: email });
                 if (!user) return res.status(404).json({ message: "User not found" });
                 if (!user.onlineStatus) {
-                    await userModel.updateOne({ email: email }, { $set: { onlineStatus: true } });
+                    await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: true } });
                     console.log(`🟢 ${email} marked online`);
                 }
                 if (userTimers.has(email)) { clearTimeout(userTimers.get(email)); }
                 const timeout = setTimeout(async () => {
-                    await userModel.updateOne({ email: email }, { $set: { onlineStatus: false } });
+                    await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: false } });
                     userTimers.delete(email);
                     console.log(`⛔ ${email} marked offline due to timeout`);
                 }, 4000);
@@ -90,25 +96,25 @@ async function run() {
 
         app.post("/signup", async (req, res) => {
             const formData = req.body;
-            const user = await userModel.findOne({ email: formData.email })
+            const user = await usersCollection.findOne({ email: formData.email })
             if (user) return res.send({ data: "User already existed" })
-            const result = await userModel.insertOne(formData)
+            const result = await usersCollection.insertOne(formData)
             if (result) res.send(formData)
         })
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
 
-            const user = await userModel.findOne({ email: formData.email })
+            const user = await usersCollection.findOne({ email: formData.email })
             if (user) return res.send(user)
 
             if (user == null) {
-                const result = await userModel.insertOne(formData)
+                const result = await usersCollection.insertOne(formData)
                 if (result) res.send(user)
             }
         })
         app.post("/forgotPass", async (req, res) => {
             const { email } = req.body;
-            const user = await userModel.findOne({ email })
+            const user = await usersCollection.findOne({ email })
             if (!user) return res.send({ message: "User not found" })
             return res.send({ message: "User found" })
         })
@@ -125,30 +131,30 @@ async function run() {
         // User Related Apis
         app.get("/profile/:id", async (req, res) => {
             const userEmail = req.params.id;
-            const user = await userModel.findOne({ email: userEmail })
+            const user = await usersCollection.findOne({ email: userEmail })
             res.send(user)
         });
         app.get("/updateInfo/:id", async (req, res) => {
             const userEmail = req.params.id;
-            const user = await userModel.findOne({ email: userEmail })
+            const user = await usersCollection.findOne({ email: userEmail })
             res.send(user)
         });
         app.put("/update", async (req, res) => {
             const { name, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
             const query = { email }
             const updatedUser = { $set: { name, address, bio, profilephotourl, coverphotourl, phone, website } }
-            const result = await userModel.updateMany(query, updatedUser)
+            const result = await usersCollection.updateMany(query, updatedUser)
             res.send(result)
             return
 
         })
         app.put("/updateUsername", async (req, res) => {
             const { email, username } = req.body;
-            const user = await userModel.findOne({ username: username })
+            const user = await usersCollection.findOne({ username: username })
             if (user == null) {
                 const query = { email }
                 const updatedUser = { $set: { username } }
-                const result = await userModel.updateOne(query, updatedUser)
+                const result = await usersCollection.updateOne(query, updatedUser)
                 res.send(result)
                 return
             }
@@ -156,19 +162,142 @@ async function run() {
                 return res.send({ message: "This username already existed" })
             }
         })
-        app.delete("/profile/delete/:id", async (req, res) => {
-            const email = req.params.id;
-            const query = { email: email }
-            const result = await userModel.deleteOne(query)
-            res.send(result)
-        })
+        // DELETE user + all related data
+        app.delete("/profile/delete/:email", async (req, res) => {
+            const email = req.params.email;
+
+            try {
+                // Optional: Auth header check
+                // if (req.headers.authorization !== process.env.ADMIN_SECRET) {
+                //   return res.status(403).json({ error: "Unauthorized" });
+                // }
+
+                // Delete user
+                const userResult = await usersCollection.deleteOne({ email });
+
+                // Delete all posts
+                const postsDeleted = await postsCollection.deleteMany({ authorEmail: email });
+
+                // Delete all comments (fallback if collection doesn't exist)
+                const commentsDeleted = commentsCollection
+                    ? await commentsCollection.deleteMany({ authorEmail: email })
+                    : { deletedCount: 0 };
+
+                // Remove likes from all posts
+                const likesRemoved = await postsCollection.updateMany(
+                    {},
+                    { $pull: { likes: { userEmail: email } } }
+                );
+
+                // Remove from other users' friend/request lists
+                const friendsCleaned = await usersCollection.updateMany(
+                    {},
+                    {
+                        $pull: {
+                            friends: { email: email },
+                            sentRequests: { email: email },
+                            receivedRequests: { email: email },
+                        },
+                    }
+                );
+
+                res.status(200).send({
+                    message: "✅ Account and related data deleted successfully",
+                    userDeleted: userResult.deletedCount,
+                    postsDeleted: postsDeleted.deletedCount,
+                    commentsDeleted: commentsDeleted.deletedCount,
+                    likesUpdated: likesRemoved.modifiedCount,
+                    friendsCleaned: friendsCleaned.modifiedCount,
+                });
+            } catch (error) {
+                console.error("❌ Error deleting account:", error);
+                res.status(500).json({ error: "Server error during account deletion" });
+            }
+        });
+
+
+        // ✅ Make Admin
+        app.put("/user/make-admin/:email", async (req, res) => {
+            const email = req.params.email;
+            try {
+                const filter = { email };
+                const updateDoc = {
+                    $set: { role: "admin" },
+                };
+                const result = await usersCollection.updateOne(filter, updateDoc);
+                res.send(result);
+            } catch (err) {
+                res.status(500).send({ message: "Failed to make admin", error: err });
+            }
+        });
+
+        // ✅ Remove Admin
+        app.put("/user/remove-admin/:email", async (req, res) => {
+            const email = req.params.email;
+            try {
+                const filter = { email };
+                const updateDoc = {
+                    $set: { role: "user" },
+                };
+                const result = await usersCollection.updateOne(filter, updateDoc);
+                res.send(result);
+            } catch (err) {
+                res.status(500).send({ message: "Failed to remove admin", error: err });
+            }
+        });
+
+
+
+        // Upload
+        app.post("/upload-profile", upload.single("profileImage"), async (req, res) => {
+            try {
+                if (!req.file) return res.status(400).send("No file uploaded");
+
+                // Compress image using sharp
+                const compressedBuffer = await sharp(req.file.buffer)
+                    .resize(500)
+                    .jpeg({ quality: 80 })
+                    .toBuffer();
+
+                // Convert to base64
+                const base64Image = `data:${req.file.mimetype};base64,${compressedBuffer.toString("base64")}`;
+
+                // Upload to imgbb
+                const response = await axios.post(
+                    `https://api.imgbb.com/1/upload?key=${process.env.IMGBB_API_KEY}`,
+                    {
+                        image: base64Image.split(",")[1],
+                    }
+                );
+
+                const imageUrl = response.data.data.url;
+                const email = req.body.email;
+
+                if (!email) return res.status(400).send("Email missing");
+
+                // Save to MongoDB
+                await usersCollection.updateOne(
+                    { email },
+                    { $set: { profileImage: imageUrl } },
+                    { upsert: true }
+                );
+
+                res.json({ success: true, imageUrl });
+            } catch (error) {
+                console.error(error.message);
+                res.status(500).send("Upload failed");
+            }
+        });
+
+
+
 
 
         // Post Related Apis
         app.get("/posts", async (req, res) => {
             try {
-                const posts = await postModel.aggregate([
-                    { $sample: { size: await postModel.countDocuments() } }
+                const posts = await postsCollection.aggregate([
+                    { $sample: { size: await postsCollection.countDocuments() } }
                 ]).toArray();
                 res.send(posts);
             } catch (error) {
@@ -178,24 +307,24 @@ async function run() {
         });
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
-            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
         app.get("/profile/post/:id", async (req, res) => {
             const id = req.params.id;
-            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
         app.post("/post", async (req, res) => {
             const postData = req.body;
-            const existingPost = await postModel.findOne({ postImageUrl: postData.postImageUrl });
+            const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
             if (existingPost) return res.status(409).send("This Image URL was already taken");
 
-            const result = await postModel.insertOne(postData);
+            const result = await postsCollection.insertOne(postData);
 
             const newPostId = result.insertedId;
             const userEmail = postData.authorEmail;
-            const userUpdateResult = await userModel.updateOne({ email: userEmail }, { $push: { posts: newPostId } });
+            const userUpdateResult = await usersCollection.updateOne({ email: userEmail }, { $push: { posts: newPostId } });
 
             const data = { result, userUpdateResult }
             res.send(data)
@@ -203,16 +332,16 @@ async function run() {
         });
         app.get("/post/update/:id", async (req, res) => {
             const id = req.params.id;
-            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         })
         app.put("/post/update/:id", async (req, res) => {
             const { postImageUrl, postContent, lastUpdateDate } = req.body;
             const id = req.params.id;
-            const post = await postModel.findOne({ _id: new ObjectId(id) })
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             const query = { postImageUrl }
             const updatedPost = { $set: { postContent, lastUpdateDate } }
-            const result = await postModel.updateMany(query, updatedPost)
+            const result = await postsCollection.updateMany(query, updatedPost)
             res.send(result)
             // console.log(result)
         })
@@ -221,7 +350,7 @@ async function run() {
             const postId = req.params.id;
 
             try {
-                const post = await postModel.findOne({ _id: new ObjectId(postId) });
+                const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
                 if (!post) return res.status(404).json({ message: "Post not found" });
 
                 // Check if this user already liked
@@ -229,7 +358,7 @@ async function run() {
 
                 if (likedUser) {
                     // Dislike (remove from likes array)
-                    const postDislikedUpdateResult = await postModel.updateOne(
+                    const postDislikedUpdateResult = await postsCollection.updateOne(
                         { _id: new ObjectId(postId) },
                         { $pull: { likes: { userId: userId } } }
                     );
@@ -238,7 +367,7 @@ async function run() {
 
                 } else {
                     // Like (add to likes array)
-                    const postlikedUpdateResult = await postModel.updateOne(
+                    const postlikedUpdateResult = await postsCollection.updateOne(
                         { _id: new ObjectId(postId) },
                         { $push: { likes: { userId, name, username } } }
                     );
@@ -255,7 +384,7 @@ async function run() {
             const postId = req.params.id;
             try {
                 const query = { _id: new ObjectId(postId) };
-                const post = await postModel.findOne(query);
+                const post = await postsCollection.findOne(query);
                 if (!post) {
                     return res.status(404).send({ message: "Post not found." });
                 }
@@ -266,7 +395,7 @@ async function run() {
                 let userUpdateSuccess = false;
                 if (authorEmail) {
                     try {
-                        const userUpdateResult = await userModel.updateOne(
+                        const userUpdateResult = await usersCollection.updateOne(
                             { email: authorEmail },
                             { $pull: { posts: post._id } }
                         );
@@ -278,7 +407,7 @@ async function run() {
                         console.error(`Error updating user ${authorEmail}'s posts array:`, updateError);
                     }
                 }
-                const deleteResult = await postModel.deleteOne(query);
+                const deleteResult = await postsCollection.deleteOne(query);
                 if (deleteResult.deletedCount === 0) {
                     return res.status(500).send({ message: "Failed to delete post from database." });
                 }
@@ -287,179 +416,37 @@ async function run() {
                 res.status(500).send({ message: "An internal server error occurred." });
             }
         });
+        app.get("/message/:id", async (req, res) => {
+            const username = req.params.id;
 
+            // Username diye friend user khuja
+            const friend = await usersCollection.findOne({ username });
 
-        // Friend related routes
-        app.put("/addfriend", async (req, res) => {
-            try {
-                const { userId, friendId } = req.body;
-                if (!userId || !friendId) return res.status(400).send("Invalid payload");
+            // Sob post nia aschi
+            const posts = await postsCollection.find().toArray();
 
-                const userObjId = new ObjectId(userId);
-                const friendObjId = new ObjectId(friendId);
+            // Sei friend er post gula filter korchi
+            const friendPost = posts.filter(post => post.authorUsername === friend.username);
 
-                const user = await userModel.findOne({ _id: userObjId });
-                const friend = await userModel.findOne({ _id: friendObjId });
+            // friend ar tar post response hishebe pathacchi
+            const data = { friend, friendPost };
 
-                if (!user || !friend) {
-                    return res.status(404).json({ message: "User or Friend not found" });
-                }
-
-                // Check if friend already has a request from user
-                const alreadyRequested = friend.friendRequests?.some(
-                    (req) => req._id.toString() === userId
-                );
-
-                if (alreadyRequested) {
-                    await userModel.updateOne(
-                        { _id: friendObjId },
-                        { $pull: { friendRequests: { _id: userObjId } } }
-                    );
-                    await userModel.updateOne(
-                        { _id: userObjId },
-                        { $pull: { sentRequests: { _id: friendObjId } } }
-                    );
-                    return res.json({ message: "Friend request canceled" });
-
-                } else {
-                    // Prepare requestData object
-                    const requestDataForFriend = {
-                        _id: user._id,
-                        name: user.name,
-                        email: user.email,
-                        username: user.username,
-                        profilephotourl: user.profilephotourl,
-                    };
-
-                    const requestDataForUser = {
-                        _id: friend._id,
-                        name: friend.name,
-                        email: friend.email,
-                        username: friend.username,
-                        profilephotourl: friend.profilephotourl,
-                    };
-
-                    // Add requestData to friend's friendRequests
-                    await userModel.updateOne(
-                        { _id: friendObjId },
-                        { $addToSet: { friendRequests: requestDataForFriend } }
-                    );
-
-                    // Add friendData to user's sentRequests
-                    await userModel.updateOne(
-                        { _id: userObjId },
-                        { $addToSet: { sentRequests: requestDataForUser } }
-                    );
-
-                    return res.json({ message: "Friend request sent" });
-                }
-
-            } catch (error) {
-                console.error("Friend request error:", error);
-                return res.status(500).send("Server error");
-            }
-        });
-        app.put("/unfriend", async (req, res) => {
-            try {
-                const { userId, friendId } = req.body;
-                if (!userId || !friendId) return res.status(400).send("Invalid payload");
-
-                const userObjId = new ObjectId(userId);
-                const friendObjId = new ObjectId(friendId);
-
-                // Friend ও User এর full profile আনো
-                const user = await userModel.findOne({ _id: userObjId });
-                const friend = await userModel.findOne({ _id: friendObjId });
-
-                if (!user || !friend) return res.status(404).send("User or Friend not found");
-
-                // Unfriend user → Remove friend from user's myFriends
-                await userModel.updateOne(
-                    { _id: userObjId },
-                    { $pull: { myFriends: { _id: friend._id, email: friend.email, }, } }
-                );
-
-                // Unfriend friend → Remove user from friend's myFriends
-                await userModel.updateOne(
-                    { _id: friendObjId },
-                    { $pull: { myFriends: { _id: user._id, email: user.email, }, }, }
-                );
-
-                return res.status(200).json({ message: "Unfriend successful" });
-            } catch (error) {
-                console.error("Unfriend error:", error);
-                res.status(500).send("Server error");
-            }
-        });
-        app.put("/confirmFriend", async (req, res) => {
-            const { userId, friendId } = req.body;
-            if (!userId || !friendId) {
-                return res.status(400).json({ message: "Missing IDs" });
-            }
-            try {
-                const userObjId = new ObjectId(userId);
-                const friendObjId = new ObjectId(friendId);
-
-                const user = await userModel.findOne({ _id: userObjId });
-                const friend = await userModel.findOne({ _id: friendObjId });
-
-                if (!user || !friend) {
-                    return res.status(404).json({ message: "User or Friend not found" });
-                }
-                const friendRequest = user.friendRequests?.find(fr => fr._id.toString() === friendId);
-                if (!friendRequest) {
-                    return res.status(400).json({ message: "No friend request found" });
-                }
-                await userModel.updateOne(
-                    { _id: userObjId },
-                    { $pull: { friendRequests: { _id: friendObjId } } }
-                );
-                await userModel.updateOne(
-                    { _id: friendObjId },
-                    { $pull: { sentRequests: { _id: userObjId } } }
-                );
-                await userModel.updateOne(
-                    { _id: userObjId },
-                    {
-                        $addToSet: {
-                            myFriends: {
-                                _id: friend._id,
-                                name: friend.name,
-                                email: friend.email,
-                                username: friend.username,
-                                profilephotourl: friend.profilephotourl,
-                            }
-                        }
-                    }
-                );
-                await userModel.updateOne(
-                    { _id: friendObjId },
-                    {
-                        $addToSet: {
-                            myFriends: {
-                                _id: user._id,
-                                name: user.name,
-                                email: user.email,
-                                username: user.username,
-                                profilephotourl: user.profilephotourl,
-                            }
-                        }
-                    }
-                );
-                return res.status(200).json({ message: "Friend request accepted" });
-            } catch (error) {
-                console.error("Error in /confirmFriend route:", error);
-                return res.status(500).json({ message: "Internal server error" });
-            }
+            res.send(data);
         });
 
+
+
+        // Friends Related Apis
         app.get("/allfriends", async (req, res) => {
             try {
                 const email = req.query.email;
                 if (!email) return res.status(400).send("Email missing");
-                const allUsersExceptMe = await userModel.find({
+
+                // Sob user paoa jabe, jar email tumar email na
+                const allUsersExceptMe = await usersCollection.find({
                     email: { $ne: email }
                 }).toArray();
+
                 res.send(allUsersExceptMe);
             } catch (error) {
                 console.error("Error in /allfriends route:", error);
@@ -468,82 +455,109 @@ async function run() {
         });
         app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
-            const friend = await userModel.findOne({ username })
-            const posts = await postModel.find().toArray()
-            const friendPost = posts.filter(post => post.authorUsername == friend.username)
-            const data = { friend, friendPost }
-            res.send(data)
-        })
-        app.get("/message/:id", async (req, res) => {
-            const username = req.params.id;
-            const friend = await userModel.findOne({ username })
-            const posts = await postModel.find().toArray()
-            const friendPost = posts.filter(post => post.authorUsername == friend.username)
-            const data = { friend, friendPost }
-            res.send(data)
-        })
 
+            // User ke username diye khuje ber korchi
+            const friend = await usersCollection.findOne({ username });
+
+            // Sob post nia aschi
+            const posts = await postsCollection.find().toArray();
+
+            // Sei friend er username er post gula filter korchi
+            const friendPost = posts.filter(post => post.authorUsername === friend.username);
+
+            // friend ar tar posts ak sathe pathacchi
+            const data = { friend, friendPost };
+
+            res.send(data);
+        });
+        // Get my friends with full objects
         app.get("/myfriends", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
+
             try {
-                const user = await userModel.findOne({ email });
+                const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-                const myFriends = user.myFriends || [];
-                // Directly return the already stored friend objects
-                res.send(myFriends);
+
+                const friendIds = (user.myFriends || []).map(id => new ObjectId(id));
+                if (friendIds.length === 0) return res.send([]);
+
+                const friends = await usersCollection.find({ _id: { $in: friendIds } }).toArray();
+                res.send(friends);
+
             } catch (error) {
                 console.error("Error in /myfriends route:", error);
                 res.status(500).send("Server error");
             }
         });
+        // Get friend requests with full objects
         app.get("/requests", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
+
             try {
-                const user = await userModel.findOne({ email });
+                const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-                const requests = user.friendRequests || [];
+
+                const requestIds = (user.friendRequests || []).map(id => new ObjectId(id));
+                if (requestIds.length === 0) return res.send([]);
+
+                const requests = await usersCollection.find({ _id: { $in: requestIds } }).toArray();
                 res.send(requests);
+
             } catch (error) {
                 console.error("Error in /requests route:", error);
                 res.status(500).send("Server error");
             }
         });
+        // Get sent friend requests with full objects
         app.get("/sentrequest", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
+
             try {
-                const user = await userModel.findOne({ email });
+                const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-                const sentRequests = user.sentRequests || [];
+
+                const sentRequestIds = (user.sentRequests || []).map(id => new ObjectId(id));
+                if (sentRequestIds.length === 0) return res.send([]);
+
+                const sentRequests = await usersCollection.find({ _id: { $in: sentRequestIds } }).toArray();
                 res.send(sentRequests);
+
             } catch (error) {
                 console.error("Error in /sentrequest route:", error);
                 res.status(500).send("Server error");
             }
         });
+        // Get users you may know (exclude self, friends, requests, sent)
         app.get("/youMayKnow", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
+
             try {
-                const user = await userModel.findOne({ email });
+                const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-                const allUsers = await userModel.find().toArray();
-                const myId = user._id.toString();
-                const myFriendIds = user.myFriends?.map(friend => friend._id.toString()) || [];
-                const friendRequestIds = user.friendRequests?.map(req => req._id.toString()) || [];
-                const sentRequestIds = user.sentRequests?.map(req => req._id.toString()) || [];
-                const youMayKnow = allUsers.filter(otherUser => {
-                    const otherId = otherUser._id.toString();
+
+                const allUsers = await usersCollection.find().toArray();
+                const myIdStr = user._id.toString();
+
+                const friendIds = (user.myFriends || []).map(id => id.toString());
+                const requestIds = (user.friendRequests || []).map(id => id.toString());
+                const sentRequestIds = (user.sentRequests || []).map(id => id.toString());
+
+                const youMayKnow = allUsers.filter(u => {
+                    const uIdStr = u._id.toString();
                     return (
-                        otherId !== myId &&
-                        !myFriendIds.includes(otherId) &&
-                        !friendRequestIds.includes(otherId) &&
-                        !sentRequestIds.includes(otherId)
+                        uIdStr !== myIdStr &&
+                        !friendIds.includes(uIdStr) &&
+                        !requestIds.includes(uIdStr) &&
+                        !sentRequestIds.includes(uIdStr)
                     );
                 });
+
                 res.send(youMayKnow);
+
             } catch (error) {
                 console.error("Error in /youMayKnow route:", error);
                 res.status(500).send("Server error");
@@ -551,11 +565,272 @@ async function run() {
         });
 
 
+        // Add friend request / cancel
+        app.put("/addfriend", async (req, res) => {
+            try {
+                const { userId, friendId } = req.body;
+                if (!userId || !friendId) return res.status(400).send("Invalid payload");
+
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                // Check if already sent (optional, can skip for idempotency)
+                const friend = await usersCollection.findOne({ _id: friendObjId });
+                const alreadySent = friend?.friendRequests?.some(id => id.equals(userObjId));
+                if (alreadySent) return res.status(409).json({ message: "Already sent request" });
+
+                // Send request
+                await usersCollection.updateOne(
+                    { _id: friendObjId },
+                    { $addToSet: { friendRequests: userObjId } }
+                );
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $addToSet: { sentRequests: friendObjId } }
+                );
+
+                return res.json({ message: "Request sent" });
+
+            } catch (error) {
+                console.error("Add friend error:", error);
+                return res.status(500).send("Server error");
+            }
+        });
+        // CencelAddFriend
+        app.put("/cancelreceivedrequest", async (req, res) => {
+            const { userId, friendId } = req.body;
+            const userObjId = new ObjectId(userId);
+            const friendObjId = new ObjectId(friendId);
+
+            await usersCollection.updateOne(
+                { _id: userObjId },
+                { $pull: { friendRequests: friendObjId } }
+            );
+            await usersCollection.updateOne(
+                { _id: friendObjId },
+                { $pull: { sentRequests: userObjId } }
+            );
+
+            res.json({ message: "Received request declined" });
+        });
+        app.put("/cancelsentrequest", async (req, res) => {
+            const { userId, friendId } = req.body;
+            const userObjId = new ObjectId(userId);
+            const friendObjId = new ObjectId(friendId);
+
+            await usersCollection.updateOne(
+                { _id: userObjId },
+                { $pull: { sentRequests: friendObjId } }
+            );
+            await usersCollection.updateOne(
+                { _id: friendObjId },
+                { $pull: { friendRequests: userObjId } }
+            );
+
+            res.json({ message: "Sent request canceled" });
+        });
+
+
+        // Confirm friend request
+        app.put("/confirmFriend", async (req, res) => {
+            const { userId, friendId } = req.body;
+            if (!userId || !friendId) return res.status(400).json({ message: "Missing IDs" });
+
+            try {
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                const user = await usersCollection.findOne({ _id: userObjId });
+                const friend = await usersCollection.findOne({ _id: friendObjId });
+
+                if (!user || !friend) return res.status(404).json({ message: "User or Friend not found" });
+
+                // Check if the request exists
+                const hasRequest = user.friendRequests?.some(id => id.equals(friendObjId));
+                if (!hasRequest) return res.status(400).json({ message: "No friend request found" });
+
+                // Remove friendId from user's friendRequests
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $pull: { friendRequests: friendObjId } }
+                );
+
+                // Add friendId to user's myFriends
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $addToSet: { myFriends: friendObjId } }
+                );
+
+                // Remove userId from friend's sentRequests
+                await usersCollection.updateOne(
+                    { _id: friendObjId },
+                    { $pull: { sentRequests: userObjId } }
+                );
+
+                // Add userId to friend's myFriends
+                await usersCollection.updateOne(
+                    { _id: friendObjId },
+                    { $addToSet: { myFriends: userObjId } }
+                );
+
+                return res.status(200).json({ message: "Request accepted" });
+
+            } catch (error) {
+                console.error("Error in /confirmFriend route:", error);
+                return res.status(500).json({ message: "Internal server error" });
+            }
+        });
+        // Unfriend
+        app.put("/unfriend", async (req, res) => {
+            try {
+                const { userId, friendId } = req.body;
+                if (!userId || !friendId) return res.status(400).send("Invalid payload");
+
+                const userObjId = new ObjectId(userId);
+                const friendObjId = new ObjectId(friendId);
+
+                const user = await usersCollection.findOne({ _id: userObjId });
+                const friend = await usersCollection.findOne({ _id: friendObjId });
+
+                if (!user || !friend) return res.status(404).send("User or Friend not found");
+
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $pull: { myFriends: friendObjId } }
+                );
+
+                await usersCollection.updateOne(
+                    { _id: friendObjId },
+                    { $pull: { myFriends: userObjId } }
+                );
+
+                return res.status(200).json({ message: "Unfriend successful" });
+
+            } catch (error) {
+                console.error("Unfriend error:", error);
+                res.status(500).send("Server error");
+            }
+        });
+
+
+        // Get saved posts for user
+        app.get("/savedPosts", async (req, res) => {
+            const email = req.query.email;
+            if (!email) return res.status(400).send("Email missing");
+
+            try {
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+
+                const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
+                if (savedPostIds.length === 0) return res.send([]);
+
+                const savedPosts = await postsCollection.find({ _id: { $in: savedPostIds } }).toArray();
+                res.send(savedPosts);
+
+            } catch (error) {
+                console.error("Error in /savedPosts route:", error);
+                res.status(500).send("Server error");
+            }
+        });
+        app.put("/savePost", async (req, res) => {
+
+            try {
+                const { userId, postId } = req.body;
+                if (!userId || !postId) return res.status(400).json({ message: "Missing userId or postId" });
+
+                const userObjId = new ObjectId(userId);
+                const postObjId = new ObjectId(postId);
+
+                const user = await usersCollection.findOne({ _id: userObjId });
+                const post = await postsCollection.findOne({ _id: postObjId });
+
+                if (!user) return res.status(404).json({ message: "User not found" });
+                if (!post) return res.status(404).json({ message: "Post not found" });
+
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $addToSet: { savePosts: postObjId } }
+                );
+
+                res.status(200).json({ message: "Post saved successfully" });
+
+            } catch (error) {
+                console.error("Error in /savePost route:", error);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
+        app.put("/removeSavedPost", async (req, res) => {
+            const { userId, postId } = req.body;
+            if (!userId || !postId) return res.status(400).send("Missing userId or postId");
+
+            const userObjId = new ObjectId(userId);
+            const postObjId = new ObjectId(postId);
+
+            const user = await usersCollection.findOne({ _id: userObjId });
+            const post = await postsCollection.findOne({ _id: postObjId });
+
+            if (!user) return res.status(404).json({ message: "User not found" });
+            if (!post) return res.status(404).json({ message: "Post not found" });
+
+            try {
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $pull: { savePosts: postObjId } }
+                );
+                res.status(200).json({ message: "Saved post removed successfully" });
+            } catch (error) {
+                console.error("Error removing saved post:", error);
+                res.status(500).send("Server error");
+            }
+        });
 
 
 
 
 
+        app.get('/search', async (req, res) => {
+            try {
+                const query = req.query.q || '';
+                if (!query.trim()) {
+                    return res.json({ posts: [], users: [] });
+                }
+
+                const email = req.query.email;
+                if (!email) return res.status(400).send("Email missing");
+
+                const limit = parseInt(req.query.limit) || 10;
+
+                const regex = new RegExp(query, 'i');
+
+                // পোস্ট সার্চ (postContent)
+                const posts = await postsCollection
+                    .find({ postContent: { $regex: regex } })
+                    .limit(limit)
+                    .toArray();
+
+                // ইউজার সার্চ (name অথবা email মিলে এবং নিজের email বাদ)
+                const users = await usersCollection
+                    .find({
+                        $and: [
+                            {
+                                $or: [
+                                    { name: { $regex: regex } },
+                                    { email: { $regex: regex } }
+                                ]
+                            },
+                            { email: { $ne: email } }
+                        ]
+                    })
+                    .limit(limit)
+                    .toArray();
+
+                res.json({ posts, users });
+            } catch (err) {
+                console.error(err);
+                res.status(500).json({ error: 'Server Error' });
+            }
+        });
 
 
 
