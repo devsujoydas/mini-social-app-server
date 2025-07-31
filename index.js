@@ -16,8 +16,6 @@ const upload = multer({ storage });
 
 
 app.use(cors({
-    // origin: 'http://localhost:5173',
-    // origin: 'https://xenonmedia.netlify.app',
     origin: ['https://xenonmedia.netlify.app', 'http://localhost:5173', "https://xenonmedia.vercel.app"],
     credentials: true
 }));
@@ -345,41 +343,40 @@ async function run() {
             res.send(result)
             // console.log(result)
         })
+
+
+
         app.put("/post/like/:id", async (req, res) => {
-            const { name, username, userId } = req.body;
+            const { userId } = req.body; 
             const postId = req.params.id;
 
             try {
                 const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
                 if (!post) return res.status(404).json({ message: "Post not found" });
 
-                // Check if this user already liked
-                const likedUser = post.likes.find(like => like.userId === userId);
+                const alreadyLiked = post.likes?.includes(userId);
 
-                if (likedUser) {
-                    // Dislike (remove from likes array)
-                    const postDislikedUpdateResult = await postsCollection.updateOne(
+                let updateResult;
+                if (alreadyLiked) {
+                    updateResult = await postsCollection.updateOne(
                         { _id: new ObjectId(postId) },
-                        { $pull: { likes: { userId: userId } } }
+                        { $pull: { likes: userId } }
                     );
-                    // console.log("Disliked successfully", postDislikedUpdateResult);
-                    return res.status(200).json({ message: "Disliked", result: postDislikedUpdateResult });
-
+                    return res.status(200).json({ message: "Disliked", result: updateResult });
                 } else {
-                    // Like (add to likes array)
-                    const postlikedUpdateResult = await postsCollection.updateOne(
+                    updateResult = await postsCollection.updateOne(
                         { _id: new ObjectId(postId) },
-                        { $push: { likes: { userId, name, username } } }
+                        { $addToSet: { likes: userId } } //addToSet duplicate jeno na hoy se jonno use korchi
                     );
-                    // console.log("Liked successfully", postlikedUpdateResult);
-                    return res.status(200).json({ message: "Liked", result: postlikedUpdateResult });
+                    return res.status(200).json({ message: "Liked", result: updateResult });
                 }
-
             } catch (error) {
                 console.error("Error in like route:", error);
                 return res.status(500).json({ message: "Internal server error" });
             }
         });
+
+
         app.delete("/post/delete/:id", async (req, res) => {
             const postId = req.params.id;
             try {
@@ -850,9 +847,9 @@ app.get("/", (req, res) => {
 })
 
 
-// app.listen(port, () => {
-//     console.log(port);
-// })
+app.listen(port, () => {
+    console.log(port);
+})
 
 module.exports = app;
 
