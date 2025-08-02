@@ -303,16 +303,19 @@ async function run() {
                 res.status(500).send("Failed to fetch random posts");
             }
         });
+
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
+
         app.get("/profile/post/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
+
         app.post("/post", async (req, res) => {
             const postData = req.body;
             const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
@@ -347,7 +350,7 @@ async function run() {
 
 
         app.put("/post/like/:id", async (req, res) => {
-            const { userId } = req.body; 
+            const { userId } = req.body;
             const postId = req.params.id;
 
             try {
@@ -382,13 +385,12 @@ async function run() {
             try {
                 const query = { _id: new ObjectId(postId) };
                 const post = await postsCollection.findOne(query);
-                if (!post) {
-                    return res.status(404).send({ message: "Post not found." });
-                }
+
+                if (!post) return res.status(404).send({ message: "Post not found." });
+
                 const authorEmail = post.authorEmail;
-                if (!authorEmail) {
-                    console.warn(`Post ${postId} does not have an authorEmail. Cannot update user's posts array.`);
-                }
+                if (!authorEmail) console.warn(`Post ${postId} does not have an authorEmail. Cannot update user's posts array.`);
+
                 let userUpdateSuccess = false;
                 if (authorEmail) {
                     try {
@@ -511,17 +513,13 @@ async function run() {
         app.get("/sentrequest", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
-
             try {
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-
                 const sentRequestIds = (user.sentRequests || []).map(id => new ObjectId(id));
                 if (sentRequestIds.length === 0) return res.send([]);
-
                 const sentRequests = await usersCollection.find({ _id: { $in: sentRequestIds } }).toArray();
                 res.send(sentRequests);
-
             } catch (error) {
                 console.error("Error in /sentrequest route:", error);
                 res.status(500).send("Server error");
@@ -535,14 +533,11 @@ async function run() {
             try {
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
-
                 const allUsers = await usersCollection.find().toArray();
                 const myIdStr = user._id.toString();
-
                 const friendIds = (user.myFriends || []).map(id => id.toString());
                 const requestIds = (user.friendRequests || []).map(id => id.toString());
                 const sentRequestIds = (user.sentRequests || []).map(id => id.toString());
-
                 const youMayKnow = allUsers.filter(u => {
                     const uIdStr = u._id.toString();
                     return (
@@ -552,9 +547,7 @@ async function run() {
                         !sentRequestIds.includes(uIdStr)
                     );
                 });
-
                 res.send(youMayKnow);
-
             } catch (error) {
                 console.error("Error in /youMayKnow route:", error);
                 res.status(500).send("Server error");
