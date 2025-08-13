@@ -15,6 +15,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 
+
 app.use(cors({
     origin: ['https://xenonmedia.netlify.app', 'http://localhost:5173', "https://xenonmedia.vercel.app"],
     credentials: true
@@ -39,33 +40,34 @@ async function run() {
         // await client.connect();
         const usersCollection = client.db("mini-social-app").collection("users")
         const postsCollection = client.db("mini-social-app").collection("posts")
-        console.log("Pinged your deployment. You successfully connected to MongoDB!");
+        console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
 
-        const verifyToken = async (req, res, next) => {
+
+        const verifyJWT = (req, res, next) => {
             const token = req.cookies?.token;
-            if (!token) return res.status(401).send({ message: "Unauthorized access" })
+            if (!token) return res.status(401).json({ message: "Unauthorized" });
+
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) {
-                    return res.status(401).send({ message: "Unauthorized access" })
-                }
-                req.user = decoded
-                next()
-            })
-        }
-        app.post("/jwt", async (req, res) => {
-            const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+                if (err) return res.status(401).json({ message: "Unauthorized" });
+                req.user = decoded;
+                next();
+            });
+        };
+        app.post("/jwt", (req, res) => {
+            const { email } = req.body;
+            if (!email) return res.status(400).json({ message: "Email required" });
+
+            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1d" });
 
             res.cookie("token", token, {
                 httpOnly: true,
-                // secure: true,
-                secure: false,
+                secure: false, // production এ true
                 sameSite: "Lax",
                 maxAge: 24 * 60 * 60 * 1000
             });
-            res.send({ success: true });
 
-        })
+            res.json({ success: true, token });
+        });
         app.post("/activeStatus", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).json({ message: "Email is required" });
@@ -119,20 +121,23 @@ async function run() {
         app.post("/logout", (req, res) => {
             res.clearCookie("token", {
                 httpOnly: true,
-                // secure: false,
-                secure: true,
+                secure: false,
+                sameSite: "Lax"
             });
-            res.status(200).json({ message: "Logged out successfully" });
+            res.json({ success: true });
         });
+
+
 
 
         // User Related Apis
-        app.get("/profile/:id", async (req, res) => {
+        app.get("/profile/:id", verifyJWT, async (req, res) => {
             const userEmail = req.params.id;
-            const user = await usersCollection.findOne({ email: userEmail })
-            res.send(user)
+            const user = await usersCollection.findOne({ email: userEmail });
+            if (!user) return res.status(404).json({ message: "User not found" });
+            res.json(user);
         });
-        app.get("/updateInfo/:id", async (req, res) => {
+        app.get("/updateInfo/:id", verifyJWT, async (req, res) => {
             const userEmail = req.params.id;
             const user = await usersCollection.findOne({ email: userEmail })
             res.send(user)
@@ -160,7 +165,6 @@ async function run() {
                 return res.send({ message: "This username already existed" })
             }
         })
-        // DELETE user + all related data
         app.delete("/profile/delete/:email", async (req, res) => {
             const email = req.params.email;
 
@@ -214,6 +218,8 @@ async function run() {
         });
 
 
+
+
         // ✅ Make Admin
         app.put("/user/make-admin/:email", async (req, res) => {
             const email = req.params.email;
@@ -228,8 +234,6 @@ async function run() {
                 res.status(500).send({ message: "Failed to make admin", error: err });
             }
         });
-
-        // ✅ Remove Admin
         app.put("/user/remove-admin/:email", async (req, res) => {
             const email = req.params.email;
             try {
@@ -243,10 +247,6 @@ async function run() {
                 res.status(500).send({ message: "Failed to remove admin", error: err });
             }
         });
-
-
-
-        // Upload
         app.post("/upload-profile", upload.single("profileImage"), async (req, res) => {
             try {
                 if (!req.file) return res.status(400).send("No file uploaded");
@@ -289,10 +289,8 @@ async function run() {
 
 
 
-
-
         // Post Related Apis
-        app.get("/posts", async (req, res) => {
+        app.get("/posts", verifyJWT, async (req, res) => {
             try {
                 const posts = await postsCollection.aggregate([
                     { $sample: { size: await postsCollection.countDocuments() } }
@@ -303,19 +301,6 @@ async function run() {
                 res.status(500).send("Failed to fetch random posts");
             }
         });
-
-        app.get("/post/:id", async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
-
-        app.get("/profile/post/:id", async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
-
         app.post("/post", async (req, res) => {
             const postData = req.body;
             const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
@@ -331,7 +316,17 @@ async function run() {
             res.send(data)
 
         });
-        app.get("/post/update/:id", async (req, res) => {
+        app.get("/post/:id", verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        });
+        app.get("/profile/post/:id", verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        });
+        app.get("/post/update/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -346,9 +341,6 @@ async function run() {
             res.send(result)
             // console.log(result)
         })
-
-
-
         app.put("/post/like/:id", async (req, res) => {
             const { userId } = req.body;
             const postId = req.params.id;
@@ -378,8 +370,6 @@ async function run() {
                 return res.status(500).json({ message: "Internal server error" });
             }
         });
-
-
         app.delete("/post/delete/:id", async (req, res) => {
             const postId = req.params.id;
             try {
@@ -415,33 +405,15 @@ async function run() {
                 res.status(500).send({ message: "An internal server error occurred." });
             }
         });
-        app.get("/message/:id", async (req, res) => {
-            const username = req.params.id;
-
-            // Username diye friend user khuja
-            const friend = await usersCollection.findOne({ username });
-
-            // Sob post nia aschi
-            const posts = await postsCollection.find().toArray();
-
-            // Sei friend er post gula filter korchi
-            const friendPost = posts.filter(post => post.authorUsername === friend.username);
-
-            // friend ar tar post response hishebe pathacchi
-            const data = { friend, friendPost };
-
-            res.send(data);
-        });
-
 
 
         // Friends Related Apis
-        app.get("/allfriends", async (req, res) => {
+        app.get("/allUsers", verifyJWT, async (req, res) => {
             try {
                 const email = req.query.email;
-                if (!email) return res.status(400).send("Email missing");
+                if (!email) return res.status(400).send("Somethings is wrong");
 
-                // Sob user paoa jabe, jar email tumar email na
+                // Sob user paoa jabe, jar email tar ta bade
                 const allUsersExceptMe = await usersCollection.find({
                     email: { $ne: email }
                 }).toArray();
@@ -452,7 +424,7 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/friends/:id", async (req, res) => {
+        app.get("/friends/:id", verifyJWT, async (req, res) => {
             const username = req.params.id;
 
             // User ke username diye khuje ber korchi
@@ -469,8 +441,7 @@ async function run() {
 
             res.send(data);
         });
-        // Get my friends with full objects
-        app.get("/myfriends", async (req, res) => {
+        app.get("/myfriends", verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
 
@@ -489,8 +460,7 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        // Get friend requests with full objects
-        app.get("/requests", async (req, res) => {
+        app.get("/requests", verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
 
@@ -509,8 +479,7 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        // Get sent friend requests with full objects
-        app.get("/sentrequest", async (req, res) => {
+        app.get("/sentrequest", verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
             try {
@@ -525,19 +494,21 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        // Get users you may know (exclude self, friends, requests, sent)
-        app.get("/youMayKnow", async (req, res) => {
+        app.get("/youMayKnow", verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
 
             try {
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send("User not found");
+
                 const allUsers = await usersCollection.find().toArray();
+
                 const myIdStr = user._id.toString();
                 const friendIds = (user.myFriends || []).map(id => id.toString());
                 const requestIds = (user.friendRequests || []).map(id => id.toString());
                 const sentRequestIds = (user.sentRequests || []).map(id => id.toString());
+
                 const youMayKnow = allUsers.filter(u => {
                     const uIdStr = u._id.toString();
                     return (
@@ -586,7 +557,6 @@ async function run() {
                 return res.status(500).send("Server error");
             }
         });
-        // CencelAddFriend
         app.put("/cancelreceivedrequest", async (req, res) => {
             const { userId, friendId } = req.body;
             const userObjId = new ObjectId(userId);
@@ -619,9 +589,6 @@ async function run() {
 
             res.json({ message: "Sent request canceled" });
         });
-
-
-        // Confirm friend request
         app.put("/confirmFriend", async (req, res) => {
             const { userId, friendId } = req.body;
             if (!userId || !friendId) return res.status(400).json({ message: "Missing IDs" });
@@ -670,7 +637,6 @@ async function run() {
                 return res.status(500).json({ message: "Internal server error" });
             }
         });
-        // Unfriend
         app.put("/unfriend", async (req, res) => {
             try {
                 const { userId, friendId } = req.body;
@@ -704,7 +670,7 @@ async function run() {
 
 
         // Get saved posts for user
-        app.get("/savedPosts", async (req, res) => {
+        app.get("/savedPosts", verifyJWT, async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
 
@@ -776,7 +742,8 @@ async function run() {
         });
 
 
-        app.get('/search', async (req, res) => {
+
+        app.get('/search', verifyJWT, async (req, res) => {
             try {
                 const query = req.query.q || '';
                 if (!query.trim()) {
@@ -816,7 +783,23 @@ async function run() {
                 res.status(500).json({ error: 'Server Error' });
             }
         });
+        app.get("/message/:id", async (req, res) => {
+            const username = req.params.id;
 
+            // Username diye friend user khuja
+            const friend = await usersCollection.findOne({ username });
+
+            // Sob post nia aschi
+            const posts = await postsCollection.find().toArray();
+
+            // Sei friend er post gula filter korchi
+            const friendPost = posts.filter(post => post.authorUsername === friend.username);
+
+            // friend ar tar post response hishebe pathacchi
+            const data = { friend, friendPost };
+
+            res.send(data);
+        });
 
 
     }
@@ -832,7 +815,7 @@ app.get("/", (req, res) => {
 
 
 app.listen(port, () => {
-    console.log(port);
+    // console.log('🟢',port);
 })
 
 module.exports = app;

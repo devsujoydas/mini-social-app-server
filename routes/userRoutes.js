@@ -6,7 +6,7 @@ const { ObjectId } = require("mongodb");
 
 module.exports = (usersCollection) => {
     const router = express.Router();
-
+    
     // =============================
     // Email দিয়ে profile fetch করা
     // =============================
@@ -54,9 +54,9 @@ module.exports = (usersCollection) => {
         }
     });
 
-    // =============================
+    // ===============================
     // Online / Offline status update
-    // =============================
+    // ===============================
     router.put("/status", verifyToken, async (req, res) => {
         try {
             const { status } = req.body; // 'online' | 'offline'

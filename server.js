@@ -26,7 +26,7 @@ connectDB().then((dbCollections) => {
     const { usersCollection, postsCollection } = dbCollections;
 
     // Routes
-    app.use("/auth", authRoutes(usersCollection));
+    app.use("/api/auth", authRoutes(usersCollection));
     app.use("/api/users", userRoutes(usersCollection));
     app.use("/api/posts", postRoutes(postsCollection, usersCollection));
     app.use("/api/friends", friendRoutes(usersCollection));
