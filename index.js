@@ -776,9 +776,6 @@ async function run() {
         });
 
 
-
-
-
         app.get('/search', async (req, res) => {
             try {
                 const query = req.query.q || '';
@@ -793,13 +790,11 @@ async function run() {
 
                 const regex = new RegExp(query, 'i');
 
-                // পোস্ট সার্চ (postContent)
                 const posts = await postsCollection
                     .find({ postContent: { $regex: regex } })
                     .limit(limit)
                     .toArray();
 
-                // ইউজার সার্চ (name অথবা email মিলে এবং নিজের email বাদ)
                 const users = await usersCollection
                     .find({
                         $and: [
@@ -821,10 +816,6 @@ async function run() {
                 res.status(500).json({ error: 'Server Error' });
             }
         });
-
-
-
-
 
 
 
