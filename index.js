@@ -3,14 +3,14 @@ const express = require('express');
 var cors = require('cors')
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-require("dotenv").config()
-const multer = require("multer");
-const sharp = require("sharp");
 const axios = require("axios");
+require("dotenv").config()
 
 const app = express()
 const port = process.env.PORT || 3000
 
+const sharp = require("sharp");
+const multer = require("multer");
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 

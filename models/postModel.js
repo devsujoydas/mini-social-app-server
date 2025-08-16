@@ -10,7 +10,7 @@ const postSchema = mongoose.Schema({
   postContent: String,
   createdDate: { type: Date, default: Date.now },
   lastUpdateDate: { type: Date, default: Date.now },
-  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // শুধু userId রাখছি
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   comments: [],
   shares: []
 });
