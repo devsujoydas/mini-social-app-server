@@ -19,7 +19,6 @@ app.use(cookieParser());
 connectDB();
 
 
-// ================= JWT Middleware =================
 const verifyJWT = (req, res, next) => {
     const token = req.cookies?.token;
     if (!token) return res.status(401).json({ message: "Unauthorized" });
@@ -33,7 +32,6 @@ const verifyJWT = (req, res, next) => {
 
 // ================= Routes =================
 
-// 🔑 Issue JWT
 app.post("/jwt", (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email required" });
@@ -42,7 +40,7 @@ app.post("/jwt", (req, res) => {
 
     res.cookie("token", token, {
         httpOnly: true,
-        secure: false, // production এ true করবে
+        secure: false, 
         sameSite: "Lax",
         maxAge: 24 * 60 * 60 * 1000,
     });
@@ -50,7 +48,6 @@ app.post("/jwt", (req, res) => {
     res.json({ success: true, token });
 });
 
-// ================= Active Status System =================
 const userTimers = new Map();
 
 app.post("/activeStatus", async (req, res) => {
