@@ -1,10 +1,13 @@
 const express = require("express");
-const router = express.Router();
-const verifyJWT = require("../middlewares/verifyJWT");
-const userModel = require("../models/userModel");
 const mongoose = require("mongoose");
 
-// 🔹 Get all users except me
+const userModel = require("../models/userModel");
+const postModel = require("../models/postModel");
+const verifyJWT = require("../middlewares/verifyJWT");
+
+const router = express.Router();
+
+
 router.get("/allUsers", verifyJWT, async (req, res) => {
   try {
     const email = req.query.email;
@@ -17,8 +20,6 @@ router.get("/allUsers", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Get a friend's profile and posts
 router.get("/friends/:username", verifyJWT, async (req, res) => {
   try {
     const { username } = req.params;
@@ -30,9 +31,7 @@ router.get("/friends/:username", verifyJWT, async (req, res) => {
     console.error(error);
     res.status(500).send("Server error");
   }
-});
-
-// 🔹 Get my friends
+}); 
 router.get("/myfriends", verifyJWT, async (req, res) => {
   try {
     const email = req.query.email;
@@ -47,8 +46,6 @@ router.get("/myfriends", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Friend requests
 router.get("/requests", verifyJWT, async (req, res) => {
   try {
     const email = req.query.email;
@@ -63,8 +60,6 @@ router.get("/requests", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Sent requests
 router.get("/sentrequest", verifyJWT, async (req, res) => {
   try {
     const email = req.query.email;
@@ -79,8 +74,6 @@ router.get("/sentrequest", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 People you may know
 router.get("/youMayKnow", verifyJWT, async (req, res) => {
   try {
     const email = req.query.email;
@@ -105,8 +98,6 @@ router.get("/youMayKnow", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Send friend request
 router.put("/addfriend", verifyJWT, async (req, res) => {
   try {
     const { userId, friendId } = req.body;
@@ -115,7 +106,6 @@ router.put("/addfriend", verifyJWT, async (req, res) => {
     const userObjId = mongoose.Types.ObjectId(userId);
     const friendObjId = mongoose.Types.ObjectId(friendId);
 
-    // Add friend request
     await userModel.updateOne({ _id: friendObjId }, { $addToSet: { friendRequests: userObjId } });
     await userModel.updateOne({ _id: userObjId }, { $addToSet: { sentRequests: friendObjId } });
 
@@ -125,25 +115,6 @@ router.put("/addfriend", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Cancel received request
-router.put("/cancelreceivedrequest", verifyJWT, async (req, res) => {
-  try {
-    const { userId, friendId } = req.body;
-    const userObjId = mongoose.Types.ObjectId(userId);
-    const friendObjId = mongoose.Types.ObjectId(friendId);
-
-    await userModel.updateOne({ _id: userObjId }, { $pull: { friendRequests: friendObjId } });
-    await userModel.updateOne({ _id: friendObjId }, { $pull: { sentRequests: userObjId } });
-
-    res.json({ message: "Received request declined" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Server error");
-  }
-});
-
-// 🔹 Cancel sent request
 router.put("/cancelsentrequest", verifyJWT, async (req, res) => {
   try {
     const { userId, friendId } = req.body;
@@ -159,8 +130,21 @@ router.put("/cancelsentrequest", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
+router.put("/cancelreceivedrequest", verifyJWT, async (req, res) => {
+  try {
+    const { userId, friendId } = req.body;
+    const userObjId = mongoose.Types.ObjectId(userId);
+    const friendObjId = mongoose.Types.ObjectId(friendId);
 
-// 🔹 Confirm friend request
+    await userModel.updateOne({ _id: userObjId }, { $pull: { friendRequests: friendObjId } });
+    await userModel.updateOne({ _id: friendObjId }, { $pull: { sentRequests: userObjId } });
+
+    res.json({ message: "Received request declined" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Server error");
+  }
+});
 router.put("/confirmFriend", verifyJWT, async (req, res) => {
   try {
     const { userId, friendId } = req.body;
@@ -169,8 +153,14 @@ router.put("/confirmFriend", verifyJWT, async (req, res) => {
     const userObjId = mongoose.Types.ObjectId(userId);
     const friendObjId = mongoose.Types.ObjectId(friendId);
 
-    await userModel.updateOne({ _id: userObjId }, { $pull: { friendRequests: friendObjId }, $addToSet: { myFriends: friendObjId } });
-    await userModel.updateOne({ _id: friendObjId }, { $pull: { sentRequests: userObjId }, $addToSet: { myFriends: userObjId } });
+    await userModel.updateOne(
+      { _id: userObjId },
+      { $pull: { friendRequests: friendObjId }, $addToSet: { myFriends: friendObjId } }
+    );
+    await userModel.updateOne(
+      { _id: friendObjId },
+      { $pull: { sentRequests: userObjId }, $addToSet: { myFriends: userObjId } }
+    );
 
     res.json({ message: "Request accepted" });
   } catch (error) {
@@ -178,8 +168,6 @@ router.put("/confirmFriend", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
-// 🔹 Unfriend
 router.put("/unfriend", verifyJWT, async (req, res) => {
   try {
     const { userId, friendId } = req.body;
@@ -195,5 +183,8 @@ router.put("/unfriend", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
+
+
+
 
 module.exports = router;

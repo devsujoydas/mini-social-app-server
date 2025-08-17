@@ -1,11 +1,10 @@
-// routes/postRoutes.js
 const express = require("express");
 const router = express.Router();
-const verifyJWT = require("../middlewares/verifyJWT");
-const postModel = require("../models/postModel");
-const userModel = require("../models/userModel");
 
-// 🔹 Get all posts (random order)
+const userModel = require("../models/userModel");
+const postModel = require("../models/postModel");
+const verifyJWT = require("../middlewares/verifyJWT");
+ 
 router.get("/", verifyJWT, async (req, res) => {
   try {
     const posts = await postModel.aggregate([{ $sample: { size: await postModel.countDocuments() } }]);
@@ -14,9 +13,7 @@ router.get("/", verifyJWT, async (req, res) => {
     console.error("Error getting posts:", error);
     res.status(500).json({ message: "Failed to fetch posts" });
   }
-});
-
-// 🔹 Create a new post
+}); 
 router.post("/", async (req, res) => {
   try {
     const postData = req.body;
@@ -34,9 +31,7 @@ router.post("/", async (req, res) => {
     console.error("Error creating post:", error);
     res.status(500).json({ message: "Failed to create post" });
   }
-});
-
-// 🔹 Get a single post
+}); 
 router.get("/:id", verifyJWT, async (req, res) => {
   try {
     const post = await postModel.findById(req.params.id).populate("author", "name username profilePhotoUrl");
@@ -46,9 +41,7 @@ router.get("/:id", verifyJWT, async (req, res) => {
     console.error("Error fetching post:", error);
     res.status(500).json({ message: "Internal server error" });
   }
-});
-
-// 🔹 Update a post
+}); 
 router.put("/update/:id", async (req, res) => {
   try {
     const { postContent, postImageUrl } = req.body;
@@ -62,9 +55,7 @@ router.put("/update/:id", async (req, res) => {
     console.error("Error updating post:", error);
     res.status(500).json({ message: "Failed to update post" });
   }
-});
-
-// 🔹 Delete a post
+}); 
 router.delete("/delete/:id", async (req, res) => {
   try {
     const post = await postModel.findById(req.params.id);
@@ -79,9 +70,8 @@ router.delete("/delete/:id", async (req, res) => {
     console.error("Error deleting post:", error);
     res.status(500).json({ message: "Failed to delete post" });
   }
-});
+}); 
 
-// 🔹 Like / Dislike a post
 router.put("/like/:id", async (req, res) => {
   try {
     const { userId } = req.body;
@@ -102,9 +92,8 @@ router.put("/like/:id", async (req, res) => {
     console.error("Error liking post:", error);
     res.status(500).json({ message: "Internal server error" });
   }
-});
+}); 
 
-// 🔹 Add comment
 router.post("/:postId/comment", async (req, res) => {
   const { postId } = req.params;
   const { userId, text } = req.body;
@@ -122,9 +111,7 @@ router.post("/:postId/comment", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
-});
-
-// 🔹 Get all comments of a post
+}); 
 router.get("/:postId/comments", async (req, res) => {
   const { postId } = req.params;
   try {
@@ -136,9 +123,7 @@ router.get("/:postId/comments", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
-});
-
-// 🔹 Delete a comment
+}); 
 router.delete("/:postId/comment/:commentId", async (req, res) => {
   const { postId, commentId } = req.params;
   try {
@@ -154,5 +139,6 @@ router.delete("/:postId/comment/:commentId", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 module.exports = router;
