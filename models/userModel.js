@@ -1,24 +1,36 @@
-// models/User.js
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const userSchema = mongoose.Schema({
-    name: String,
-    username: String,
-    email: String,
-    password: String,
-    address: String,
-    bio: String,
-    profilephotourl: String,
-    coverphotourl: String,
-    phone: String,
-    website: String,
-    posts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
-    createdDate: { type: Date, default: Date.now },
-    friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    myFriends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+const userSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    username: { type: String, unique: true, required: true, lowercase: true, trim: true, },
+    email: { type: String, unique: true, required: true, lowercase: true, trim: true },
+
+    bio: { type: String, default: "" },
+    profilePhotoUrl: { type: String, default: "" },
+    coverPhotoUrl: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    website: { type: String, default: "" },
+
+    socialLinks: {
+      facebook: { type: String, default: "" },
+      linkedin: { type: String, default: "" },
+      twitter: { type: String, default: "" },
+      instagram: { type: String, default: "" },
+      github: { type: String, default: "" },
+      youtube: { type: String, default: "" },
+    },
+
+    posts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
+    friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    myFriends: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    savePosts: [{ type: mongoose.Schema.Types.ObjectId, ref: "Post" }],
+
     onlineStatus: { type: Boolean, default: false },
-    sentRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    role: { type: String, default: 'user' }
-});
+    role: { type: String, enum: ["user", "admin"], default: "user" },
+  },
+  { timestamps: true }
+);
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model("User", userSchema);
