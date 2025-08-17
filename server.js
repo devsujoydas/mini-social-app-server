@@ -5,13 +5,16 @@ const jwt = require("jsonwebtoken");
 require("dotenv").config();
 
 const connectDB = require("./utils/db");
-const userModel = require("../models/userModel");
-const postModel = require("../models/postModel");
 const verifyJWT = require("./middlewares/verifyJWT");
 
+const userModel = require("../models/userModel");
+const postModel = require("../models/postModel");
 
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
 const postRoutes = require("./routes/postRoutes");
+const friendRoutes = require("./routes/friendRoutes");
+
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -66,61 +69,9 @@ app.post("/activeStatus", async (req, res) => {
 
 
 app.use("/auth", authRoutes);
+app.use("/users", userRoutes);
 app.use("/posts", postRoutes);
-
-
-app.post("/posts/:postId/comment", async (req, res) => {
-  const { postId } = req.params;
-  const { userId, text } = req.body;
-
-  if (!text) return res.status(400).json({ message: "Comment cannot be empty" });
-
-  try {
-    const post = await PostModel.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    post.comments.push({ user: userId, text });
-    await post.save();
-
-    res.status(201).json({ success: true, comments: post.comments });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-app.get("/posts/:postId/comments", async (req, res) => {
-  const { postId } = req.params;
-
-  try {
-    const post = await PostModel.findById(postId).populate("comments.user", "name profilePhotoUrl username");
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    res.json(post.comments);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-app.post("/posts/:postId/comment", async (req, res) => {
-  const { postId } = req.params;
-  const { userId, text } = req.body;
-
-  if (!text) return res.status(400).json({ message: "Comment cannot be empty" });
-
-  try {
-    const post = await PostModel.findById(postId);
-    if (!post) return res.status(404).json({ message: "Post not found" });
-
-    post.comments.push({ user: userId, text });
-    await post.save();
-
-    res.status(201).json({ success: true, comments: post.comments });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
+app.use("/friends", friendRoutes);
 
 
 

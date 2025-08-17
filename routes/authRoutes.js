@@ -16,7 +16,6 @@ router.post("/signup", async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
-
 router.post("/signinwithgoogle", async (req, res) => {
     try {
         const formData = req.body;
@@ -32,7 +31,6 @@ router.post("/signinwithgoogle", async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
-
 router.post("/forgotPass", async (req, res) => {
     try {
         const { email } = req.body;
@@ -45,7 +43,6 @@ router.post("/forgotPass", async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
-
 router.post("/logout", (req, res) => {
     res.clearCookie("token", {
         httpOnly: true,

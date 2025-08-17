@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 const userModel = require("../models/userModel");
 const postModel = require("../models/postModel");
-const verifyJWT = require("../middlewares/verifyJWT"); // ধরছি তুমি এটা middleware বানিয়েছ
+const verifyJWT = require("../middlewares/verifyJWT");
 
 
 
