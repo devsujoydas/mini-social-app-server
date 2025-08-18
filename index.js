@@ -57,7 +57,7 @@ async function run() {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
 
-            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1d" });
+            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" });
 
             res.cookie("token", token, {
                 httpOnly: true,
@@ -68,6 +68,7 @@ async function run() {
 
             res.json({ success: true, token });
         });
+        
         app.post("/activeStatus", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).json({ message: "Email is required" });
@@ -79,7 +80,7 @@ async function run() {
                     await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: true } });
                     console.log(`🟢 ${email} marked online`);
                 }
-                if (userTimers.has(email)) { clearTimeout(userTimers.get(email)); }
+                if (userTimers.has(email))  clearTimeout(userTimers.get(email)); 
                 const timeout = setTimeout(async () => {
                     await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: false } });
                     userTimers.delete(email);
@@ -103,10 +104,8 @@ async function run() {
         })
         app.post("/signinwithgoogle", async (req, res) => {
             const formData = req.body;
-
             const user = await usersCollection.findOne({ email: formData.email })
             if (user) return res.send(user)
-
             if (user == null) {
                 const result = await usersCollection.insertOne(formData)
                 if (result) res.send(user)

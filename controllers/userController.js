@@ -6,6 +6,48 @@ const postModel = require("../models/postModel");
 const verifyJWT = require("../middlewares/verifyJWT");
 
 
+const userTimers = new Map();
+const activeStatus = async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).json({ message: "Email is required" });
+
+  try {
+    const user = await userModel.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user.onlineStatus) {
+      await userModel.updateOne({ email }, { $set: { onlineStatus: true } });
+      console.log(`🟢 ${email} marked online`);
+    }
+
+    if (userTimers.has(email)) clearTimeout(userTimers.get(email));
+
+    const timeout = setTimeout(async () => {
+      await userModel.updateOne({ email }, { $set: { onlineStatus: false } });
+      userTimers.delete(email);
+    }, 4000);
+
+    userTimers.set(email, timeout);
+    res.status(200).json({ status: "online" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+}
+
+const getUserProfile = async (req, res) => {
+  try {
+    const email = req.params.email;
+    const user = await userModel.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json(user);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+}
+
 const search = async (req, res) => {
   try {
     const query = req.query.q || "";
@@ -112,10 +154,13 @@ const uploadProfile = async (req, res) => {
   }
 };
 
+
 module.exports = {
+  getUserProfile,
   search,
   getMessageData,
   makeAdmin,
   removeAdmin,
-  uploadProfile
+  uploadProfile,
+  activeStatus
 };
