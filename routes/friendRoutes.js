@@ -98,6 +98,7 @@ router.get("/youMayKnow", verifyJWT, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
+
 router.put("/addfriend", verifyJWT, async (req, res) => {
   try {
     const { userId, friendId } = req.body;

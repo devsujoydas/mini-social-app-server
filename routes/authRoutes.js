@@ -5,8 +5,9 @@ const jwt = require("jsonwebtoken");
 const userModel = require("../models/userModel");
 const postModel = require("../models/postModel");
 const verifyJWT = require("../middlewares/verifyJWT");
+ 
 
-// JWT token generate
+
 router.post("/jwt", (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: "Email required" });
@@ -22,8 +23,6 @@ router.post("/jwt", (req, res) => {
 
   res.json({ success: true, token });
 });
-
-// Signup
 router.post("/signup", async (req, res) => {
   try {
     const formData = req.body;
@@ -36,9 +35,7 @@ router.post("/signup", async (req, res) => {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
-});
-
-// Sign in with Google
+}); 
 router.post("/signInWithGoogle", async (req, res) => {
   try {
     const formData = req.body;
@@ -54,8 +51,6 @@ router.post("/signInWithGoogle", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-// Forgot password
 router.post("/forgotPass", async (req, res) => {
   try {
     const { email } = req.body;
@@ -68,8 +63,6 @@ router.post("/forgotPass", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-// Logout
 router.post("/logout", (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
@@ -78,5 +71,8 @@ router.post("/logout", (req, res) => {
   });
   res.json({ success: true });
 });
+
+
+
 
 module.exports = router;
