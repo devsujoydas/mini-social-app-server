@@ -5,7 +5,7 @@ const userModel = require("../models/userModel");
 const postModel = require("../models/postModel");
 const verifyJWT = require("../middlewares/verifyJWT");
  
-router.get("/", verifyJWT, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const posts = await postModel.aggregate([{ $sample: { size: await postModel.countDocuments() } }]);
     res.json(posts);

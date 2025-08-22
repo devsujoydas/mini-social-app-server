@@ -12,6 +12,7 @@ const upload = multer();
 // Online status tracking
 
 router.post("/activeStatus",activeStatus);
+
 router.get("/profile/:email", verifyJWT, getUserProfile); 
 
 router.get("/updateInfo/:email", verifyJWT, async (req, res) => {

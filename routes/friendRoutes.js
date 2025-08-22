@@ -8,12 +8,13 @@ const verifyJWT = require("../middlewares/verifyJWT");
 const router = express.Router();
 
 
-router.get("/allUsers", verifyJWT, async (req, res) => {
+router.get("/allUsers",  async (req, res) => {
   try {
     const email = req.query.email;
     if (!email) return res.status(400).send("Email missing");
 
     const allUsers = await userModel.find({ email: { $ne: email } });
+    console.log(allUsers)
     res.json(allUsers);
   } catch (error) {
     console.error(error);
