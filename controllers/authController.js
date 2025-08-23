@@ -4,11 +4,10 @@ const postModel = require("../models/postModel");
 const verifyJWT = require("../middlewares/verifyJWT");
 const jwt = require("jsonwebtoken");
 
-
+// JWT kaj done
 const createJwt = (req, res) => {
     const { email } = req.body;
-    console.log(email);
-    if (!email) return res.status(400).json({ message: "Email required" });
+    if (!email) return res.status(400).json({ message: "email missing" });
 
     const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" });
 
@@ -21,6 +20,7 @@ const createJwt = (req, res) => {
 
     res.json({ success: true, token });
 }
+
 const signup = async (req, res) => {
     try {
         const formData = req.body;

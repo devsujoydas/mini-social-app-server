@@ -4,7 +4,8 @@ const router = express.Router();
 const userModel = require("../models/userModel");
 const postModel = require("../models/postModel");
 const verifyJWT = require("../middlewares/verifyJWT");
- 
+const { default: mongoose } = require("mongoose");
+
 router.get("/", async (req, res) => {
   try {
     const posts = await postModel.aggregate([{ $sample: { size: await postModel.countDocuments() } }]);
@@ -13,7 +14,7 @@ router.get("/", async (req, res) => {
     console.error("Error getting posts:", error);
     res.status(500).json({ message: "Failed to fetch posts" });
   }
-}); 
+});
 router.post("/", async (req, res) => {
   try {
     const postData = req.body;
@@ -31,17 +32,64 @@ router.post("/", async (req, res) => {
     console.error("Error creating post:", error);
     res.status(500).json({ message: "Failed to create post" });
   }
-}); 
-router.get("/:id", verifyJWT, async (req, res) => {
+});
+
+
+// router.get("/:id", async (req, res) => {
+//   console.log("hello")
+//   console.log(req.params.id)
+//   try {
+//     const post = await postModel.find({ _id: ObjectId("686aa2663a24253535c0fb49") }).populate("author", "name username profilePhotoUrl");
+//     if (!post) return res.status(404).json({ message: "Post not found" });
+//     res.json(post);
+//   } catch (error) {
+//     console.error("Error fetching post:", error);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// }); 
+
+// router.get("/:id", async (req, res) => {
+//   const id = req.params.id;
+//   console.log("Received ID:", id);
+
+//   try {
+//     const post = await postModel.findById(id).populate("author", "name username profilePhotoUrl");
+//     console.log("Found Post:", post);
+
+//     if (!post) {
+//       console.log("No post found with that ID");
+//       return res.status(404).json({ message: "Post not found" });
+//     }
+
+//     res.json(post);
+//   } catch (error) {
+//     console.error("Error fetching post:", error);
+//     res.status(500).json({ message: "Internal server error" });
+//   }
+// });
+
+router.get("/:id", async (req, res) => {
+  console.log("Received ID:", req.params.id);
+
   try {
-    const post = await postModel.findById(req.params.id).populate("author", "name username profilePhotoUrl");
-    if (!post) return res.status(404).json({ message: "Post not found" });
+    const id = new mongoose.Types.ObjectId(req.params.id); // ✅ Convert to ObjectId
+    const post = await postModel
+      .findById(id)
+      .populate("author", "name username profilePhotoUrl");
+
+    console.log("Found Post:", post);
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
     res.json(post);
   } catch (error) {
     console.error("Error fetching post:", error);
     res.status(500).json({ message: "Internal server error" });
   }
-}); 
+});
+
 router.put("/update/:id", async (req, res) => {
   try {
     const { postContent, postImageUrl } = req.body;
@@ -55,7 +103,7 @@ router.put("/update/:id", async (req, res) => {
     console.error("Error updating post:", error);
     res.status(500).json({ message: "Failed to update post" });
   }
-}); 
+});
 router.delete("/delete/:id", async (req, res) => {
   try {
     const post = await postModel.findById(req.params.id);
@@ -70,7 +118,7 @@ router.delete("/delete/:id", async (req, res) => {
     console.error("Error deleting post:", error);
     res.status(500).json({ message: "Failed to delete post" });
   }
-}); 
+});
 
 router.put("/like/:id", async (req, res) => {
   try {
@@ -92,7 +140,7 @@ router.put("/like/:id", async (req, res) => {
     console.error("Error liking post:", error);
     res.status(500).json({ message: "Internal server error" });
   }
-}); 
+});
 
 router.post("/:postId/comment", async (req, res) => {
   const { postId } = req.params;
@@ -111,7 +159,7 @@ router.post("/:postId/comment", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
-}); 
+});
 router.get("/:postId/comments", async (req, res) => {
   const { postId } = req.params;
   try {
@@ -123,7 +171,7 @@ router.get("/:postId/comments", async (req, res) => {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
-}); 
+});
 router.delete("/:postId/comment/:commentId", async (req, res) => {
   const { postId, commentId } = req.params;
   try {
