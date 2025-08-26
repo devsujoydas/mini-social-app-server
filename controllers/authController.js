@@ -7,10 +7,12 @@ const jwt = require("jsonwebtoken");
 // JWT kaj done
 const createJwt = (req, res) => {
     const { email } = req.body;
+    console.log(email)
     if (!email) return res.status(400).json({ message: "email missing" });
 
     const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" });
-
+    console.log(token)
+    
     res.cookie("token", token, {
         httpOnly: true,
         secure: false,
