@@ -782,6 +782,7 @@ async function run() {
                 res.status(500).json({ error: 'Server Error' });
             }
         });
+        
         app.get("/message/:id", async (req, res) => {
             const username = req.params.id;
 
@@ -814,11 +815,13 @@ app.get("/", (req, res) => {
 
 
 app.listen(port, () => {
-    // console.log('🟢',port);
+    console.log('MONGO_ATLAS 🟢 ON',port);
 })
 
 module.exports = app;
 
 
 
-
+setTimeout(() => {
+    console.log("hello")
+}, 1000);
