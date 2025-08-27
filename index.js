@@ -44,31 +44,64 @@ async function run() {
 
 
         const verifyJWT = (req, res, next) => {
-            const token = req.cookies?.token;
+            const authHeader = req.headers["authorization"];
+            const token = authHeader && authHeader.split(" ")[1]; 
             if (!token) return res.status(401).json({ message: "Unauthorized" });
 
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) return res.status(401).json({ message: "Unauthorized" });
-                req.user = decoded;
+                if (err) return res.status(403).json({ message: "Forbidden" }); 
+                req.user = decoded;  
                 next();
             });
         };
+
         app.post("/jwt", (req, res) => {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
 
-            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" });
+            const accessToken = jwt.sign({ email, role: "admin" }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
+            const refreshToken = jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
-            res.cookie("token", token, {
+            res.cookie("refreshToken", refreshToken, {
                 httpOnly: true,
-                secure: false, // production এ true
-                sameSite: "Lax",
-                maxAge: 24 * 60 * 60 * 1000
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict",
+                maxAge: 7 * 24 * 60 * 60 * 1000,  
             });
 
-            res.json({ success: true, token });
+            res.json({ success: true, accessToken });  
         });
-        
+
+        app.post("/refresh-token", (req, res) => {
+            const refreshToken = req.cookies?.refreshToken;
+            if (!refreshToken) return res.status(401).json({ message: "No refresh token" });
+
+            jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
+                if (err) return res.status(401).json({ message: "Invalid refresh token" });
+
+                const newAccessToken = jwt.sign(
+                    { email: decoded.email, role: "admin" },
+                    process.env.ACCESS_TOKEN_SECRET,
+                    { expiresIn: "15m" }
+                );
+
+                res.json({ success: true, accessToken: newAccessToken });
+            });
+        });
+
+        app.post("/logout", (req, res) => {
+            res.clearCookie("refreshToken", {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === "production",
+                sameSite: "Strict"
+            });
+            res.json({ success: true });
+        });
+
+
+
+
+
         app.post("/activeStatus", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).json({ message: "Email is required" });
@@ -80,7 +113,7 @@ async function run() {
                     await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: true } });
                     console.log(`🟢 ${email} marked online`);
                 }
-                if (userTimers.has(email))  clearTimeout(userTimers.get(email)); 
+                if (userTimers.has(email)) clearTimeout(userTimers.get(email));
                 const timeout = setTimeout(async () => {
                     await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: false } });
                     userTimers.delete(email);
@@ -315,8 +348,9 @@ async function run() {
             res.send(data)
 
         });
-        app.get("/post/:id", verifyJWT, async (req, res) => {
+        app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
+            console.log(id)
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
@@ -423,7 +457,7 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/friends/:id", verifyJWT, async (req, res) => {
+        app.get("/friends/:id", async (req, res) => {
             const username = req.params.id;
 
             // User ke username diye khuje ber korchi
@@ -749,6 +783,8 @@ async function run() {
                     return res.json({ posts: [], users: [] });
                 }
 
+                console.log(query)
+
                 const email = req.query.email;
                 if (!email) return res.status(400).send("Email missing");
 
@@ -775,14 +811,16 @@ async function run() {
                     })
                     .limit(limit)
                     .toArray();
-
+                console.log(posts)
+                console.log(users)
                 res.json({ posts, users });
             } catch (err) {
                 console.error(err);
                 res.status(500).json({ error: 'Server Error' });
             }
         });
-        
+
+
         app.get("/message/:id", async (req, res) => {
             const username = req.params.id;
 
@@ -810,18 +848,15 @@ run().catch(console.dir);
 
 
 app.get("/", (req, res) => {
-    res.send("XENON MEDIA v2");
+    res.send("XENON MEDIA v2 MONGO_ATLAS 🟢 ON");
 })
 
 
 app.listen(port, () => {
-    console.log('MONGO_ATLAS 🟢 ON',port);
+    console.log('MONGO_ATLAS 🟢 ON', port);
 })
 
 module.exports = app;
 
 
 
-setTimeout(() => {
-    console.log("hello")
-}, 1000);
