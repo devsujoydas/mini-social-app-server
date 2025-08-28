@@ -43,18 +43,20 @@ async function run() {
         console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
 
 
+        // ✅ Middleware
         const verifyJWT = (req, res, next) => {
             const authHeader = req.headers["authorization"];
-            const token = authHeader && authHeader.split(" ")[1]; 
+            const token = authHeader && authHeader.split(" ")[1];
             if (!token) return res.status(401).json({ message: "Unauthorized" });
 
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) return res.status(403).json({ message: "Forbidden" }); 
-                req.user = decoded;  
+                if (err) return res.status(401).json({ message: "Token expired or invalid" });
+                req.user = decoded;
                 next();
             });
         };
 
+        // ✅ Issue tokens
         app.post("/jwt", (req, res) => {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
@@ -66,12 +68,13 @@ async function run() {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
                 sameSite: "Strict",
-                maxAge: 7 * 24 * 60 * 60 * 1000,  
+                maxAge: 7 * 24 * 60 * 60 * 1000,
             });
 
-            res.json({ success: true, accessToken });  
+            res.json({ success: true, accessToken });
         });
 
+        // ✅ Refresh token route
         app.post("/refresh-token", (req, res) => {
             const refreshToken = req.cookies?.refreshToken;
             if (!refreshToken) return res.status(401).json({ message: "No refresh token" });
@@ -88,6 +91,7 @@ async function run() {
                 res.json({ success: true, accessToken: newAccessToken });
             });
         });
+
 
         app.post("/logout", (req, res) => {
             res.clearCookie("refreshToken", {
@@ -350,7 +354,6 @@ async function run() {
         });
         app.get("/post/:id", async (req, res) => {
             const id = req.params.id;
-            console.log(id)
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
         });
