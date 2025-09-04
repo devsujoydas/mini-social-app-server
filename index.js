@@ -167,12 +167,82 @@ async function run() {
 
 
         // User Related Apis
-        app.get("/profile/:id", verifyJWT, async (req, res) => {
-            const userEmail = req.params.id;
-            const user = await usersCollection.findOne({ email: userEmail });
-            if (!user) return res.status(404).json({ message: "User not found" });
-            res.json(user);
+        // app.get("/profile/:id", verifyJWT, async (req, res) => {
+        //     const userEmail = req.params.id;
+        //     const user = await usersCollection.findOne({ email: userEmail });
+        //     if (!user) return res.status(404).json({ message: "User not found" });
+        //     res.json(user);
+        // });
+
+
+        app.get("/profile", verifyJWT, async (req, res) => {
+            try {
+                const { email } = req.query;
+                if (!email) return res.status(400).json({ message: "Email is required" });
+
+                const user = await usersCollection.aggregate([
+                    { $match: { email } },
+
+                    // posts populate
+                    {
+                        $lookup: {
+                            from: "posts",
+                            localField: "posts",
+                            foreignField: "_id",
+                            as: "posts"
+                        }
+                    },
+
+                    // savePosts populate
+                    {
+                        $lookup: {
+                            from: "posts",
+                            localField: "savePosts",
+                            foreignField: "_id",
+                            as: "savePosts"
+                        }
+                    },
+
+                    // myFriends populate
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "myFriends",
+                            foreignField: "_id",
+                            as: "myFriends"
+                        }
+                    },
+
+                    // friendRequests populate
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "friendRequests",
+                            foreignField: "_id",
+                            as: "friendRequests"
+                        }
+                    },
+
+                    // sentRequests populate
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "sentRequests",
+                            foreignField: "_id",
+                            as: "sentRequests"
+                        }
+                    }
+                ]).toArray();
+
+                if (!user || !user.length) return res.status(404).json({ message: "User not found" });
+
+                res.json(user[0]); // aggregate result array দেয়, তাই [0]
+            } catch (err) {
+                res.status(500).json({ message: "Server error", error: err.message });
+            }
         });
+
+
         app.get("/updateInfo/:id", verifyJWT, async (req, res) => {
             const userEmail = req.params.id;
             const user = await usersCollection.findOne({ email: userEmail })
@@ -329,14 +399,344 @@ async function run() {
         app.get("/posts", verifyJWT, async (req, res) => {
             try {
                 const posts = await postsCollection.aggregate([
-                    { $sample: { size: await postsCollection.countDocuments() } }
+                    // 1. Randomize posts
+                    { $sample: { size: await postsCollection.countDocuments() } },
+
+                    // 2. Lookup author info
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "authorId",
+                            foreignField: "_id",
+                            as: "authorInfo"
+                        }
+                    },
+                    { $unwind: "$authorInfo" }, // convert array to object
+
+                    // 3. Lookup likes info
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "likes",
+                            foreignField: "_id",
+                            as: "likesInfo"
+                        }
+                    },
+
+                    // 4. Project only necessary fields
+                    {
+                        $project: {
+                            _id: 1,
+                            content: 1,
+                            createdAt: 1,
+                            updatedAt: 1,
+                            shares: 1,
+                            comments: 1,
+                            author: {
+                                _id: "$authorInfo._id",
+                                name: "$authorInfo.name",
+                                username: "$authorInfo.username",
+                                profilePhoto: "$authorInfo.profilephotourl"
+                            },
+                            likes: {
+                                $map: {
+                                    input: "$likesInfo",
+                                    as: "user",
+                                    in: {
+                                        _id: "$$user._id",
+                                        name: "$$user.name",
+                                        username: "$$user.username",
+                                        profilePhoto: "$$user.profilephotourl"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 ]).toArray();
+
                 res.send(posts);
             } catch (error) {
                 console.error("Error getting random posts:", error);
                 res.status(500).send("Failed to fetch random posts");
             }
         });
+        app.get("/posts/user", verifyJWT, async (req, res) => {
+            try {
+                const { email } = req.query;
+                if (!email) return res.status(400).send("Email is required");
+
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+
+                const posts = await postsCollection.aggregate([
+                    // 1. Match only this user's posts
+                    { $match: { authorId: user._id } },
+
+                    // 2. Sort by creation date descending
+                    { $sort: { createdAt: -1 } },
+
+                    // 3. Lookup author info
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "authorId",
+                            foreignField: "_id",
+                            as: "authorInfo"
+                        }
+                    },
+                    { $unwind: "$authorInfo" },
+
+                    // 4. Lookup likes info
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "likes",
+                            foreignField: "_id",
+                            as: "likesInfo"
+                        }
+                    },
+
+                    // 5. Project only required fields
+                    {
+                        $project: {
+                            _id: 1,
+                            content: 1,
+                            createdAt: 1,
+                            updatedAt: 1,
+                            shares: 1,
+                            comments: 1,
+                            author: {
+                                _id: "$authorInfo._id",
+                                name: "$authorInfo.name",
+                                username: "$authorInfo.username",
+                                profilePhoto: "$authorInfo.profilephotourl"
+                            },
+                            likes: {
+                                $map: {
+                                    input: "$likesInfo",
+                                    as: "user",
+                                    in: {
+                                        _id: "$$user._id",
+                                        name: "$$user.name",
+                                        username: "$$user.username",
+                                        profilePhoto: "$$user.profilephotourl"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]).toArray();
+
+                res.send(posts);
+
+            } catch (err) {
+                console.error("Error fetching user's posts:", err);
+                res.status(500).send("Failed to fetch user posts");
+            }
+        });
+
+        // app.get("/savedPosts", verifyJWT, async (req, res) => {
+        //     const email = req.query.email;
+        //     if (!email) return res.status(400).send("Email missing");
+
+        //     try {
+        //         const user = await usersCollection.findOne({ email });
+        //         if (!user) return res.status(404).send("User not found");
+
+        //         const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
+        //         if (savedPostIds.length === 0) return res.send([]);
+
+        //         const savedPosts = await postsCollection.find({ _id: { $in: savedPostIds } }).toArray();
+        //         res.send(savedPosts);
+
+        //     } catch (error) {
+        //         console.error("Error in /savedPosts route:", error);
+        //         res.status(500).send("Server error");
+        //     }
+        // });
+
+        app.get("/savedPosts", verifyJWT, async (req, res) => {
+            try {
+                const { email } = req.query;
+                if (!email) return res.status(400).send("Email is required");
+
+                // 1. User খুঁজে বের করো
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send("User not found");
+
+                const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
+                if (savedPostIds.length === 0) return res.send([]);
+
+                // 2. Aggregation চালাও saved posts এর উপর
+                const savedPosts = await postsCollection.aggregate([
+                    { $match: { _id: { $in: savedPostIds } } },
+
+                    // Sort করো latest first
+                    { $sort: { createdAt: -1 } },
+
+                    // Author info আনো
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "authorId",
+                            foreignField: "_id",
+                            as: "authorInfo"
+                        }
+                    },
+                    { $unwind: "$authorInfo" },
+
+                    // Likes info আনো
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "likes",
+                            foreignField: "_id",
+                            as: "likesInfo"
+                        }
+                    },
+
+                    // Final projection
+                    {
+                        $project: {
+                            _id: 1,
+                            content: 1,
+                            createdAt: 1,
+                            updatedAt: 1,
+                            shares: 1,
+                            comments: 1,
+                            author: {
+                                _id: "$authorInfo._id",
+                                name: "$authorInfo.name",
+                                username: "$authorInfo.username",
+                                profilePhoto: "$authorInfo.profilephotourl"
+                            },
+                            likes: {
+                                $map: {
+                                    input: "$likesInfo",
+                                    as: "user",
+                                    in: {
+                                        _id: "$$user._id",
+                                        name: "$$user.name",
+                                        username: "$$user.username",
+                                        profilePhoto: "$$user.profilephotourl"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]).toArray();
+
+                res.send(savedPosts);
+
+            } catch (err) {
+                console.error("Error fetching saved posts:", err);
+                res.status(500).send("Failed to fetch saved posts");
+            }
+        });
+        app.put("/savePost", async (req, res) => {
+
+            try {
+                const { userId, postId } = req.body;
+                if (!userId || !postId) return res.status(400).json({ message: "Missing userId or postId" });
+
+                const userObjId = new ObjectId(userId);
+                const postObjId = new ObjectId(postId);
+
+                const user = await usersCollection.findOne({ _id: userObjId });
+                const post = await postsCollection.findOne({ _id: postObjId });
+
+                if (!user) return res.status(404).json({ message: "User not found" });
+                if (!post) return res.status(404).json({ message: "Post not found" });
+
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $addToSet: { savePosts: postObjId } }
+                );
+
+                res.status(200).json({ message: "Post saved successfully" });
+
+            } catch (error) {
+                console.error("Error in /savePost route:", error);
+                res.status(500).json({ message: "Internal server error" });
+            }
+        });
+        app.put("/removeSavedPost", async (req, res) => {
+            const { userId, postId } = req.body;
+            if (!userId || !postId) return res.status(400).send("Missing userId or postId");
+
+            const userObjId = new ObjectId(userId);
+            const postObjId = new ObjectId(postId);
+
+            const user = await usersCollection.findOne({ _id: userObjId });
+            const post = await postsCollection.findOne({ _id: postObjId });
+
+            if (!user) return res.status(404).json({ message: "User not found" });
+            if (!post) return res.status(404).json({ message: "Post not found" });
+
+            try {
+                await usersCollection.updateOne(
+                    { _id: userObjId },
+                    { $pull: { savePosts: postObjId } }
+                );
+                res.status(200).json({ message: "Saved post removed successfully" });
+            } catch (error) {
+                console.error("Error removing saved post:", error);
+                res.status(500).send("Server error");
+            }
+        });
+
+        // Sameer@M51
+
+
+
+        app.get("/post/:id", async (req, res) => {
+            const id = req.params.id;
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        });
+        app.get("/profile/post/:id", verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
+            res.send(post)
+        });
+
+        app.put("/post/like/:id", async (req, res) => {
+            const { userId } = req.body; // frontend থেকে আসবে string
+            const postId = req.params.id;
+
+            try {
+                const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
+                if (!post) return res.status(404).json({ message: "Post not found" });
+
+                const userObjectId = new ObjectId(userId);
+
+                const alreadyLiked = post.likes?.some(
+                    (id) => id.toString() === userId // ObjectId compare
+                );
+
+                let updateResult;
+                if (alreadyLiked) {
+                    // Dislike
+                    updateResult = await postsCollection.updateOne(
+                        { _id: new ObjectId(postId) },
+                        { $pull: { likes: userObjectId } }
+                    );
+                    return res.status(200).json({ message: "Disliked", result: updateResult });
+                } else {
+                    // Like
+                    updateResult = await postsCollection.updateOne(
+                        { _id: new ObjectId(postId) },
+                        { $addToSet: { likes: userObjectId } } // duplicate না হবে
+                    );
+                    return res.status(200).json({ message: "Liked", result: updateResult });
+                }
+            } catch (error) {
+                console.error("Error in like route:", error);
+                return res.status(500).json({ message: "Internal server error" });
+            }
+        });
+
+
         app.post("/post", async (req, res) => {
             const postData = req.body;
             const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
@@ -352,16 +752,7 @@ async function run() {
             res.send(data)
 
         });
-        app.get("/post/:id", async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
-        app.get("/profile/post/:id", verifyJWT, async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
+
         app.get("/post/update/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
@@ -377,35 +768,6 @@ async function run() {
             res.send(result)
             // console.log(result)
         })
-        app.put("/post/like/:id", async (req, res) => {
-            const { userId } = req.body;
-            const postId = req.params.id;
-
-            try {
-                const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
-                if (!post) return res.status(404).json({ message: "Post not found" });
-
-                const alreadyLiked = post.likes?.includes(userId);
-
-                let updateResult;
-                if (alreadyLiked) {
-                    updateResult = await postsCollection.updateOne(
-                        { _id: new ObjectId(postId) },
-                        { $pull: { likes: userId } }
-                    );
-                    return res.status(200).json({ message: "Disliked", result: updateResult });
-                } else {
-                    updateResult = await postsCollection.updateOne(
-                        { _id: new ObjectId(postId) },
-                        { $addToSet: { likes: userId } } //addToSet duplicate jeno na hoy se jonno use korchi
-                    );
-                    return res.status(200).json({ message: "Liked", result: updateResult });
-                }
-            } catch (error) {
-                console.error("Error in like route:", error);
-                return res.status(500).json({ message: "Internal server error" });
-            }
-        });
         app.delete("/post/delete/:id", async (req, res) => {
             const postId = req.params.id;
             try {
@@ -477,7 +839,7 @@ async function run() {
 
             res.send(data);
         });
-        app.get("/myfriends", verifyJWT, async (req, res) => {
+        app.get("/myfriends", async (req, res) => {
             const email = req.query.email;
             if (!email) return res.status(400).send("Email missing");
 
@@ -705,77 +1067,7 @@ async function run() {
         });
 
 
-        // Get saved posts for user
-        app.get("/savedPosts", verifyJWT, async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).send("Email missing");
 
-            try {
-                const user = await usersCollection.findOne({ email });
-                if (!user) return res.status(404).send("User not found");
-
-                const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
-                if (savedPostIds.length === 0) return res.send([]);
-
-                const savedPosts = await postsCollection.find({ _id: { $in: savedPostIds } }).toArray();
-                res.send(savedPosts);
-
-            } catch (error) {
-                console.error("Error in /savedPosts route:", error);
-                res.status(500).send("Server error");
-            }
-        });
-        app.put("/savePost", async (req, res) => {
-
-            try {
-                const { userId, postId } = req.body;
-                if (!userId || !postId) return res.status(400).json({ message: "Missing userId or postId" });
-
-                const userObjId = new ObjectId(userId);
-                const postObjId = new ObjectId(postId);
-
-                const user = await usersCollection.findOne({ _id: userObjId });
-                const post = await postsCollection.findOne({ _id: postObjId });
-
-                if (!user) return res.status(404).json({ message: "User not found" });
-                if (!post) return res.status(404).json({ message: "Post not found" });
-
-                await usersCollection.updateOne(
-                    { _id: userObjId },
-                    { $addToSet: { savePosts: postObjId } }
-                );
-
-                res.status(200).json({ message: "Post saved successfully" });
-
-            } catch (error) {
-                console.error("Error in /savePost route:", error);
-                res.status(500).json({ message: "Internal server error" });
-            }
-        });
-        app.put("/removeSavedPost", async (req, res) => {
-            const { userId, postId } = req.body;
-            if (!userId || !postId) return res.status(400).send("Missing userId or postId");
-
-            const userObjId = new ObjectId(userId);
-            const postObjId = new ObjectId(postId);
-
-            const user = await usersCollection.findOne({ _id: userObjId });
-            const post = await postsCollection.findOne({ _id: postObjId });
-
-            if (!user) return res.status(404).json({ message: "User not found" });
-            if (!post) return res.status(404).json({ message: "Post not found" });
-
-            try {
-                await usersCollection.updateOne(
-                    { _id: userObjId },
-                    { $pull: { savePosts: postObjId } }
-                );
-                res.status(200).json({ message: "Saved post removed successfully" });
-            } catch (error) {
-                console.error("Error removing saved post:", error);
-                res.status(500).send("Server error");
-            }
-        });
 
 
 
