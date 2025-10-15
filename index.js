@@ -43,26 +43,29 @@ async function run() {
         console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
 
 
-        // ✅ Middleware
         const verifyJWT = (req, res, next) => {
-            const authHeader = req.headers["authorization"];
-            const token = authHeader && authHeader.split(" ")[1];
+            const token = req.headers.authorization?.split(" ")[1];
             if (!token) return res.status(401).json({ message: "Unauthorized" });
 
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
-                if (err) return res.status(401).json({ message: "Token expired or invalid" });
+                if (err) return res.status(403).json({ message: "Token expired or invalid" });
                 req.user = decoded;
                 next();
             });
         };
 
-        // ✅ Issue tokens
+        // ✅ Helper function to create tokens
+        const createTokens = (email) => ({
+            accessToken: jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" }),
+            refreshToken: jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" }),
+        });
+
+        // ✅ Issue tokens (login / initial auth)
         app.post("/jwt", (req, res) => {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
 
-            const accessToken = jwt.sign({ email, role: "admin" }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" });
-            const refreshToken = jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+            const { accessToken, refreshToken } = createTokens(email);
 
             res.cookie("refreshToken", refreshToken, {
                 httpOnly: true,
@@ -80,18 +83,15 @@ async function run() {
             if (!refreshToken) return res.status(401).json({ message: "No refresh token" });
 
             jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET, (err, decoded) => {
-                if (err) return res.status(401).json({ message: "Invalid refresh token" });
+                if (err) {
+                    res.clearCookie("refreshToken");
+                    return res.status(401).json({ message: "Invalid refresh token" });
+                }
 
-                const newAccessToken = jwt.sign(
-                    { email: decoded.email, role: "admin" },
-                    process.env.ACCESS_TOKEN_SECRET,
-                    { expiresIn: "15m" }
-                );
-
-                res.json({ success: true, accessToken: newAccessToken });
+                const { accessToken } = createTokens(decoded.email);
+                res.json({ success: true, accessToken });
             });
         });
-
 
         app.post("/logout", (req, res) => {
             res.clearCookie("refreshToken", {
