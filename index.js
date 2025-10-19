@@ -37,11 +37,12 @@ const userTimers = new Map();
 
 async function run() {
     try {
-        // await client.connect();
         const usersCollection = client.db("mini-social-app").collection("users")
         const postsCollection = client.db("mini-social-app").collection("posts")
-        console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
+        const chatRoomsCollection = client.db("mini-social-app").collection("chatRoom")
+        const chatsCollection = client.db("mini-social-app").collection("chats")
 
+        console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
 
         const verifyJWT = (req, res, next) => {
             const token = req.headers.authorization?.split(" ")[1];
@@ -54,13 +55,11 @@ async function run() {
             });
         };
 
-        // ✅ Helper function to create tokens
         const createTokens = (email) => ({
             accessToken: jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" }),
             refreshToken: jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" }),
         });
 
-        // ✅ Issue tokens (login / initial auth)
         app.post("/jwt", (req, res) => {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
@@ -77,7 +76,6 @@ async function run() {
             res.json({ success: true, accessToken });
         });
 
-        // ✅ Refresh token route
         app.post("/refresh-token", (req, res) => {
             const refreshToken = req.cookies?.refreshToken;
             if (!refreshToken) return res.status(401).json({ message: "No refresh token" });
@@ -107,29 +105,42 @@ async function run() {
 
 
         app.post("/activeStatus", async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).json({ message: "Email is required" });
+            const userId = req.query.userId;
+            if (!userId) return res.status(400).send("Something is wrong");
+            const userObjectId = new ObjectId(userId);
+
             try {
-                // 🟢 
-                const user = await usersCollection.findOne({ email: email });
+                const user = await usersCollection.findOne({ _id: userObjectId });
                 if (!user) return res.status(404).json({ message: "User not found" });
+
+                const userKey = user._id.toString();
+
                 if (!user.onlineStatus) {
-                    await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: true } });
-                    console.log(`🟢 ${email} marked online`);
+                    await usersCollection.updateOne(
+                        { _id: userObjectId },
+                        { $set: { onlineStatus: true } }
+                    );
+                    console.log(`🟢 ${user.email} marked online`);
                 }
-                if (userTimers.has(email)) clearTimeout(userTimers.get(email));
+                if (userTimers.has(userKey)) clearTimeout(userTimers.get(userKey));
                 const timeout = setTimeout(async () => {
-                    await usersCollection.updateOne({ email: email }, { $set: { onlineStatus: false } });
-                    userTimers.delete(email);
-                    console.log(`⛔ ${email} marked offline due to timeout`);
+                    await usersCollection.updateOne(
+                        { _id: userObjectId },
+                        { $set: { onlineStatus: false } }
+                    );
+                    userTimers.delete(userKey);
+                    console.log(`⛔ ${user.email} marked offline due to timeout`);
                 }, 4000);
-                userTimers.set(email, timeout);
+                userTimers.set(userKey, timeout);
+
                 res.status(200).json({ status: "online" });
+
             } catch (error) {
                 console.error("❌ activeStatus error:", error);
                 res.status(500).json({ message: "Server error" });
             }
         });
+
 
 
         app.post("/signup", async (req, res) => {
@@ -166,20 +177,10 @@ async function run() {
 
 
 
-        // User Related Apis
-        // app.get("/profile/:id", verifyJWT, async (req, res) => {
-        //     const userEmail = req.params.id;
-        //     const user = await usersCollection.findOne({ email: userEmail });
-        //     if (!user) return res.status(404).json({ message: "User not found" });
-        //     res.json(user);
-        // });
-
-
-        app.get("/profile", verifyJWT, async (req, res) => {
+        app.get("/profile", async (req, res) => {
             try {
                 const { email } = req.query;
                 if (!email) return res.status(400).json({ message: "Email is required" });
-
                 const user = await usersCollection.aggregate([
                     { $match: { email } },
 
@@ -243,7 +244,7 @@ async function run() {
         });
 
 
-        app.get("/updateInfo/:id", verifyJWT, async (req, res) => {
+        app.get("/updateInfo/:id", async (req, res) => {
             const userEmail = req.params.id;
             const user = await usersCollection.findOne({ email: userEmail })
             res.send(user)
@@ -326,7 +327,6 @@ async function run() {
 
 
 
-        // ✅ Make Admin
         app.put("/user/make-admin/:email", async (req, res) => {
             const email = req.params.email;
             try {
@@ -395,35 +395,34 @@ async function run() {
 
 
 
-        // Post Related Apis
-        app.get("/posts", verifyJWT, async (req, res) => {
+        app.get("/posts", async (req, res) => {
             try {
-                const posts = await postsCollection.aggregate([
-                    // 1. Randomize posts
-                    { $sample: { size: await postsCollection.countDocuments() } },
+                const authorId = req.query.authorId;
+                const query = authorId ? { authorId: new ObjectId(authorId) } : {}; // Filter if authorId exists
 
-                    // 2. Lookup author info
+                const totalCount = await postsCollection.countDocuments(query);
+                if (totalCount === 0) return res.send([]);
+
+                const posts = await postsCollection.aggregate([
+                    { $match: query },
+                    { $sample: { size: totalCount } },
                     {
                         $lookup: {
                             from: "users",
                             localField: "authorId",
                             foreignField: "_id",
-                            as: "authorInfo"
-                        }
+                            as: "authorInfo",
+                        },
                     },
-                    { $unwind: "$authorInfo" }, // convert array to object
-
-                    // 3. Lookup likes info
+                    { $unwind: "$authorInfo" },
                     {
                         $lookup: {
                             from: "users",
                             localField: "likes",
                             foreignField: "_id",
-                            as: "likesInfo"
-                        }
+                            as: "likesInfo",
+                        },
                     },
-
-                    // 4. Project only necessary fields
                     {
                         $project: {
                             _id: 1,
@@ -436,7 +435,7 @@ async function run() {
                                 _id: "$authorInfo._id",
                                 name: "$authorInfo.name",
                                 username: "$authorInfo.username",
-                                profilePhoto: "$authorInfo.profilephotourl"
+                                profilePhotoUrl: "$authorInfo.profile.profilePhotoUrl",
                             },
                             likes: {
                                 $map: {
@@ -446,57 +445,50 @@ async function run() {
                                         _id: "$$user._id",
                                         name: "$$user.name",
                                         username: "$$user.username",
-                                        profilePhoto: "$$user.profilephotourl"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl", // fixed casing
+                                    },
+                                },
+                            },
+                        },
+                    },
                 ]).toArray();
 
                 res.send(posts);
             } catch (error) {
-                console.error("Error getting random posts:", error);
-                res.status(500).send("Failed to fetch random posts");
+                console.error("Error getting posts:", error);
+                res.status(500).send("Failed to fetch posts");
             }
         });
-        app.get("/posts/user", verifyJWT, async (req, res) => {
+        app.get("/post/:id", async (req, res) => {
             try {
-                const { email } = req.query;
-                if (!email) return res.status(400).send("Email is required");
+                const { id } = req.params;
 
-                const user = await usersCollection.findOne({ email });
-                if (!user) return res.status(404).send("User not found");
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).json({ message: "Invalid post ID" });
+                }
 
-                const posts = await postsCollection.aggregate([
-                    // 1. Match only this user's posts
-                    { $match: { authorId: user._id } },
+                const postObjectId = new ObjectId(id);
+                const post = await postsCollection.aggregate([
+                    { $match: { _id: postObjectId } },
 
-                    // 2. Sort by creation date descending
-                    { $sort: { createdAt: -1 } },
-
-                    // 3. Lookup author info
+                    // Join with author info
                     {
                         $lookup: {
                             from: "users",
                             localField: "authorId",
                             foreignField: "_id",
-                            as: "authorInfo"
-                        }
+                            as: "authorInfo",
+                        },
                     },
                     { $unwind: "$authorInfo" },
-
-                    // 4. Lookup likes info
                     {
                         $lookup: {
                             from: "users",
                             localField: "likes",
                             foreignField: "_id",
-                            as: "likesInfo"
-                        }
+                            as: "likesInfo",
+                        },
                     },
-
-                    // 5. Project only required fields
                     {
                         $project: {
                             _id: 1,
@@ -509,7 +501,7 @@ async function run() {
                                 _id: "$authorInfo._id",
                                 name: "$authorInfo.name",
                                 username: "$authorInfo.username",
-                                profilePhoto: "$authorInfo.profilephotourl"
+                                profilePhotoUrl: "$authorInfo.profile.profilePhotoUrl",
                             },
                             likes: {
                                 $map: {
@@ -519,83 +511,56 @@ async function run() {
                                         _id: "$$user._id",
                                         name: "$$user.name",
                                         username: "$$user.username",
-                                        profilePhoto: "$$user.profilephotourl"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl",
+                                    },
+                                },
+                            },
+                        },
+                    },
                 ]).toArray();
 
-                res.send(posts);
+                if (!post || post.length === 0) {
+                    return res.status(404).json({ message: "Post not found" });
+                }
 
-            } catch (err) {
-                console.error("Error fetching user's posts:", err);
-                res.status(500).send("Failed to fetch user posts");
+                res.status(200).json(post[0]);
+            } catch (error) {
+                console.error("Error fetching post:", error);
+                res.status(500).json({ message: "Failed to fetch post" });
             }
         });
-
-        // app.get("/savedPosts", verifyJWT, async (req, res) => {
-        //     const email = req.query.email;
-        //     if (!email) return res.status(400).send("Email missing");
-
-        //     try {
-        //         const user = await usersCollection.findOne({ email });
-        //         if (!user) return res.status(404).send("User not found");
-
-        //         const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
-        //         if (savedPostIds.length === 0) return res.send([]);
-
-        //         const savedPosts = await postsCollection.find({ _id: { $in: savedPostIds } }).toArray();
-        //         res.send(savedPosts);
-
-        //     } catch (error) {
-        //         console.error("Error in /savedPosts route:", error);
-        //         res.status(500).send("Server error");
-        //     }
-        // });
-
-        app.get("/savedPosts", verifyJWT, async (req, res) => {
+        app.get("/savedPosts", async (req, res) => {
             try {
-                const { email } = req.query;
-                if (!email) return res.status(400).send("Email is required");
+                const { userId } = req.query;
 
-                // 1. User খুঁজে বের করো
-                const user = await usersCollection.findOne({ email });
+                if (!userId) return res.status(400).send("userId is required");
+
+                const user = await usersCollection.findOne({ _id: new ObjectId(userId) });
                 if (!user) return res.status(404).send("User not found");
 
                 const savedPostIds = (user.savePosts || []).map(id => new ObjectId(id));
                 if (savedPostIds.length === 0) return res.send([]);
 
-                // 2. Aggregation চালাও saved posts এর উপর
                 const savedPosts = await postsCollection.aggregate([
                     { $match: { _id: { $in: savedPostIds } } },
-
-                    // Sort করো latest first
                     { $sort: { createdAt: -1 } },
-
-                    // Author info আনো
                     {
                         $lookup: {
                             from: "users",
                             localField: "authorId",
                             foreignField: "_id",
-                            as: "authorInfo"
-                        }
+                            as: "authorInfo",
+                        },
                     },
                     { $unwind: "$authorInfo" },
-
-                    // Likes info আনো
                     {
                         $lookup: {
                             from: "users",
                             localField: "likes",
                             foreignField: "_id",
-                            as: "likesInfo"
-                        }
+                            as: "likesInfo",
+                        },
                     },
-
-                    // Final projection
                     {
                         $project: {
                             _id: 1,
@@ -608,7 +573,7 @@ async function run() {
                                 _id: "$authorInfo._id",
                                 name: "$authorInfo.name",
                                 username: "$authorInfo.username",
-                                profilePhoto: "$authorInfo.profilephotourl"
+                                profilePhotoUrl: "$authorInfo.profile.profilePhotoUrl", // ✅ fixed path
                             },
                             likes: {
                                 $map: {
@@ -618,21 +583,23 @@ async function run() {
                                         _id: "$$user._id",
                                         name: "$$user.name",
                                         username: "$$user.username",
-                                        profilePhoto: "$$user.profilephotourl"
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl", // ✅ fixed path
+                                    },
+                                },
+                            },
+                        },
+                    },
                 ]).toArray();
 
                 res.send(savedPosts);
-
             } catch (err) {
                 console.error("Error fetching saved posts:", err);
                 res.status(500).send("Failed to fetch saved posts");
             }
         });
+
+
+
         app.put("/savePost", async (req, res) => {
 
             try {
@@ -685,20 +652,7 @@ async function run() {
             }
         });
 
-        // Sameer@M51
 
-
-
-        app.get("/post/:id", async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
-        app.get("/profile/post/:id", verifyJWT, async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        });
 
         app.put("/post/like/:id", async (req, res) => {
             const { userId } = req.body; // frontend থেকে আসবে string
@@ -735,8 +689,6 @@ async function run() {
                 return res.status(500).json({ message: "Internal server error" });
             }
         });
-
-
         app.post("/post", async (req, res) => {
             const postData = req.body;
             const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
@@ -753,7 +705,7 @@ async function run() {
 
         });
 
-        app.get("/post/update/:id", verifyJWT, async (req, res) => {
+        app.get("/post/update/:id", async (req, res) => {
             const id = req.params.id;
             const post = await postsCollection.findOne({ _id: new ObjectId(id) })
             res.send(post)
@@ -805,15 +757,100 @@ async function run() {
         });
 
 
-        // Friends Related Apis
-        app.get("/allUsers", verifyJWT, async (req, res) => {
-            try {
-                const email = req.query.email;
-                if (!email) return res.status(400).send("Somethings is wrong");
 
-                // Sob user paoa jabe, jar email tar ta bade
+
+        // Friends Related Apis
+        app.get("/profile/:id", async (req, res) => {
+            try {
+                const id = req.params.id;
+                const userId = new ObjectId(id);
+
+                // Step 1: Friend/User info
+                const friend = await usersCollection.findOne({ _id: userId });
+                if (!friend) return res.status(404).send({ message: "User not found" });
+
+                // Step 2: Query posts of that user
+                const query = { authorId: userId };
+
+                const totalCount = await postsCollection.countDocuments(query);
+                if (totalCount === 0)
+                    return res.send({ friend, friendPost: [] });
+
+                // Step 3: Aggregate posts with author & likes info
+                const posts = await postsCollection
+                    .aggregate([
+                        { $match: query },
+                        { $sort: { createdAt: -1 } },
+                        {
+                            $lookup: {
+                                from: "users",
+                                localField: "authorId",
+                                foreignField: "_id",
+                                as: "authorInfo",
+                            },
+                        },
+                        { $unwind: "$authorInfo" },
+                        {
+                            $lookup: {
+                                from: "users",
+                                localField: "likes",
+                                foreignField: "_id",
+                                as: "likesInfo",
+                            },
+                        },
+                        {
+                            $project: {
+                                _id: 1,
+                                content: 1,
+                                createdAt: 1,
+                                updatedAt: 1,
+                                shares: 1,
+                                comments: 1,
+                                author: {
+                                    _id: "$authorInfo._id",
+                                    name: "$authorInfo.name",
+                                    username: "$authorInfo.username",
+                                    profilePhotoUrl: "$authorInfo.profile.profilePhotoUrl",
+                                },
+                                likes: {
+                                    $map: {
+                                        input: "$likesInfo",
+                                        as: "user",
+                                        in: {
+                                            _id: "$$user._id",
+                                            name: "$$user.name",
+                                            username: "$$user.username",
+                                            profilePhotoUrl: "$$user.profile.profilePhotoUrl",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    ])
+                    .toArray();
+
+                res.send({
+                    friend,
+                    friendPost: posts,
+                });
+            } catch (error) {
+                console.error("Error in /profile/:id:", error);
+                res.status(500).send({ message: "Internal server error" });
+            }
+        });
+
+
+
+
+        app.get("/allUsers", async (req, res) => {
+            try {
+                const userId = req.query.userId;
+                if (!userId) return res.status(400).send("Somethings is wrong");
+
+                const userObjectId = new ObjectId(userId)
+
                 const allUsersExceptMe = await usersCollection.find({
-                    email: { $ne: email }
+                    _id: { $ne: userObjectId }
                 }).toArray();
 
                 res.send(allUsersExceptMe);
@@ -822,29 +859,15 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/friends/:id", async (req, res) => {
-            const username = req.params.id;
 
-            // User ke username diye khuje ber korchi
-            const friend = await usersCollection.findOne({ username });
-
-            // Sob post nia aschi
-            const posts = await postsCollection.find().toArray();
-
-            // Sei friend er username er post gula filter korchi
-            const friendPost = posts.filter(post => post.authorUsername === friend.username);
-
-            // friend ar tar posts ak sathe pathacchi
-            const data = { friend, friendPost };
-
-            res.send(data);
-        });
         app.get("/myfriends", async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).send("Email missing");
+            const userId = req.query.userId;
+            if (!userId) return res.status(400).send("Somethings is wrong");
+
+            const userObjectId = new ObjectId(userId)
 
             try {
-                const user = await usersCollection.findOne({ email });
+                const user = await usersCollection.findOne({ _id: userObjectId });
                 if (!user) return res.status(404).send("User not found");
 
                 const friendIds = (user.myFriends || []).map(id => new ObjectId(id));
@@ -858,12 +881,13 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/requests", verifyJWT, async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).send("Email missing");
+        app.get("/requests", async (req, res) => {
+            const userId = req.query.userId;
+            if (!userId) return res.status(400).send("Somethings is wrong");
 
+            const userObjectId = new ObjectId(userId)
             try {
-                const user = await usersCollection.findOne({ email });
+                const user = await usersCollection.findOne({ _id: userObjectId });
                 if (!user) return res.status(404).send("User not found");
 
                 const requestIds = (user.friendRequests || []).map(id => new ObjectId(id));
@@ -877,11 +901,13 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/sentrequest", verifyJWT, async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).send("Email missing");
+        app.get("/sentrequest", async (req, res) => {
+            const userId = req.query.userId;
+            if (!userId) return res.status(400).send("Somethings is wrong");
+
+            const userObjectId = new ObjectId(userId)
             try {
-                const user = await usersCollection.findOne({ email });
+                const user = await usersCollection.findOne({ _id: userObjectId });
                 if (!user) return res.status(404).send("User not found");
                 const sentRequestIds = (user.sentRequests || []).map(id => new ObjectId(id));
                 if (sentRequestIds.length === 0) return res.send([]);
@@ -892,12 +918,13 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-        app.get("/youMayKnow", verifyJWT, async (req, res) => {
-            const email = req.query.email;
-            if (!email) return res.status(400).send("Email missing");
+        app.get("/youMayKnow", async (req, res) => {
+            const userId = req.query.userId;
+            if (!userId) return res.status(400).send("Somethings is wrong");
 
+            const userObjectId = new ObjectId(userId)
             try {
-                const user = await usersCollection.findOne({ email });
+                const user = await usersCollection.findOne({ _id: userObjectId });
                 if (!user) return res.status(404).send("User not found");
 
                 const allUsers = await usersCollection.find().toArray();
@@ -1071,7 +1098,7 @@ async function run() {
 
 
 
-        app.get('/search', verifyJWT, async (req, res) => {
+        app.get('/search', async (req, res) => {
             try {
                 const query = req.query.q || '';
                 if (!query.trim()) {
@@ -1117,22 +1144,166 @@ async function run() {
 
 
         app.get("/message/:id", async (req, res) => {
-            const username = req.params.id;
+            try {
+                const friendId = new ObjectId(req.params.id);
+                const userId = new ObjectId(req.query.userId);
 
-            // Username diye friend user khuja
-            const friend = await usersCollection.findOne({ username });
+                // Step 1: Friend info
+                const friend = await usersCollection.findOne(
+                    { _id: friendId },
+                    {
+                        projection: {
+                            _id: 1,
+                            name: 1,
+                            username: 1,
+                            profile: { profilePhotoUrl: 1 },
+                            onlineStatus: 1,
+                        },
+                    }
+                );
 
-            // Sob post nia aschi
-            const posts = await postsCollection.find().toArray();
+                if (!friend) return res.status(404).send({ message: "Friend not found" });
 
-            // Sei friend er post gula filter korchi
-            const friendPost = posts.filter(post => post.authorUsername === friend.username);
+                // Step 2: ChatRoom find
+                const chatRoom = await chatRoomsCollection.findOne({
+                    participants: { $all: [userId, friendId] },
+                });
 
-            // friend ar tar post response hishebe pathacchi
-            const data = { friend, friendPost };
+                if (!chatRoom) {
+                    return res.send({
+                        friend,
+                        messages: [],
+                    });
+                }
 
-            res.send(data);
+                // Step 3: Message IDs
+                const messageIds = chatRoom.messages.map((m) => new ObjectId(m.messageId));
+
+                // Step 4: Fetch messages
+                let messages = await chatsCollection
+                    .find({ _id: { $in: messageIds } })
+                    .sort({ createdAt: 1 })
+                    .toArray();
+
+                // Step 5: Populate sender and receiver info
+                const userIds = [...new Set(messages.flatMap(m => [m.senderId.toString(), m.receiverId.toString()]))]
+                    .map(id => new ObjectId(id));
+
+                const users = await usersCollection
+                    .find({ _id: { $in: userIds } })
+                    .project({ _id: 1, name: 1, username: 1, "profile.profilePhotoUrl": 1 })
+                    .toArray();
+
+                const usersMap = {};
+                users.forEach(u => {
+                    usersMap[u._id.toString()] = u;
+                });
+
+                messages = messages.map(msg => ({
+                    ...msg,
+                    sender: usersMap[msg.senderId.toString()],
+                    receiver: usersMap[msg.receiverId.toString()],
+                }));
+
+                res.send({
+                    friend,
+                    messages,
+                });
+            } catch (error) {
+                console.error("Error fetching messages:", error);
+                res.status(500).send("Failed to fetch messages");
+            }
         });
+
+        app.post("/message/send", async (req, res) => {
+            try {
+                const { senderId, receiverId, message } = req.body;
+
+                const sender = new ObjectId(senderId);
+                const receiver = new ObjectId(receiverId);
+
+                // 1️⃣ Step: message save করো
+                const messageData = {
+                    senderId: sender,
+                    receiverId: receiver,
+                    message,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                };
+
+                const messageResult = await chatsCollection.insertOne(messageData);
+                const messageId = messageResult.insertedId;
+
+                // 2️⃣ Step: chatRoomsCollection এ pair check করো
+                const existingChatRoom = await chatRoomsCollection.findOne({
+                    participants: { $all: [sender, receiver] },
+                });
+
+                const messageRef = {
+                    messageId,
+                    sentAt: messageData.createdAt,
+                };
+
+                if (existingChatRoom) {
+                    // pair already exists → শুধু messageRef push করো
+                    await chatRoomsCollection.updateOne(
+                        { _id: existingChatRoom._id },
+                        {
+                            $push: { messages: messageRef },
+                            $set: { lastUpdated: new Date() },
+                        }
+                    );
+                } else {
+                    // নতুন conversation তৈরি করো
+                    await chatRoomsCollection.insertOne({
+                        participants: [sender, receiver],
+                        messages: [messageRef],
+                        lastUpdated: new Date(),
+                    });
+                }
+
+                res.status(200).send({
+                    success: true,
+                    message: "Message sent successfully",
+                    messageId,
+                });
+            } catch (error) {
+                console.error("Error sending message:", error);
+                res.status(500).send("Failed to send message");
+            }
+        });
+
+ 
+        app.delete("/message/:id", async (req, res) => {
+            try {
+                const msgId = new ObjectId(req.params.id);
+                await chatsCollection.deleteOne({ _id: msgId });
+                res.send({ success: true });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ success: false, message: "Failed to delete message" });
+            }
+        });
+ 
+        app.put("/message/:id", async (req, res) => {
+            try {
+                const msgId = new ObjectId(req.params.id);
+                const { message } = req.body;
+                await chatsCollection.updateOne(
+                    { _id: msgId },
+                    { $set: { message, updatedAt: new Date() } }
+                );
+                res.send({ success: true });
+            } catch (err) {
+                console.error(err);
+                res.status(500).send({ success: false, message: "Failed to update message" });
+            }
+        });
+
+
+
+
+
 
 
     }
