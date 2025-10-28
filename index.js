@@ -162,7 +162,6 @@ async function run() {
                 const displayName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 
 
-                if (!email) return res.send({ message: "Email is required" })
                 if (!name) return res.send({ message: "name is required" })
                 if (!email) return res.send({ message: "Email is required" })
 
@@ -932,10 +931,6 @@ async function run() {
                 res.status(500).send({ message: "Internal server error" });
             }
         });
-
-
-
-
         app.get("/allUsers", async (req, res) => {
             try {
                 const userId = req.query.userId;
@@ -953,7 +948,6 @@ async function run() {
                 res.status(500).send("Server error");
             }
         });
-
         app.get("/myfriends", async (req, res) => {
             const userId = req.query.userId;
             if (!userId) return res.status(400).send("Somethings is wrong");
@@ -1187,6 +1181,8 @@ async function run() {
             }
         });
 
+
+
         app.get('/search', async (req, res) => {
             try {
                 const query = req.query.q || '';
@@ -1227,239 +1223,6 @@ async function run() {
                 res.status(500).json({ error: 'Server Error' });
             }
         });
-
-
-
-
-        //         app.get("/message", async (req, res) => {
-        //             try {
-        //                 const userId = new ObjectId(req.query.userId);
-        //                 if (!userId) return res.status(400).json({ message: "userId is required" });
-
-        //                 const chatRooms = await chatRoomsCollection
-        //                     .find({ participants: userId })
-        //                     .toArray();
-
-        //                 const chatList = await Promise.all(
-        //                     chatRooms.map(async (room) => {
-        //                         const friendId = room.participants.find((id) => !id.equals(userId));
-
-        //                         const friend = await usersCollection.findOne(
-        //                             { _id: friendId },
-        //                             {
-        //                                 projection: {
-        //                                     _id: 1,
-        //                                     name: 1,
-        //                                     username: 1,
-        //                                     "profile.profilePhotoUrl": 1,
-        //                                     onlineStatus: 1,
-        //                                 },
-        //                             }
-        //                         );
-
-        //                         if (!room.messages?.length) {
-        //                             return { friend, lastMessage: null, lastMessageTime: null };
-        //                         }
-
-        //                         const lastMessageId = new ObjectId(room.messages[room.messages.length - 1].messageId);
-
-        //                         const lastMessage = await chatsCollection.findOne({ _id: lastMessageId });
-
-        //                         return {
-        //                             friend,
-        //                             lastMessage: lastMessage?.message || "",
-        //                             lastMessageTime: lastMessage?.createdAt || null,
-        //                         };
-        //                     })
-        //                 );
-
-        //                 chatList.sort((a, b) => {
-        //                     if (!a.lastMessageTime) return 1;
-        //                     if (!b.lastMessageTime) return -1;
-        //                     return new Date(b.lastMessageTime) - new Date(a.lastMessageTime);
-        //                 });
-        //                 res.json(chatList); 
-        //             } catch (error) {
-        //                 console.error("Error fetching chat list:", error);
-        //                 res.status(500).json({ message: "Failed to fetch chat list" });
-        //             }
-        //         });
-
-        //         app.get("/message/:id", async (req, res) => {
-        //             try {
-        //                 const friendId = new ObjectId(req.params.id);
-        //                 const userId = new ObjectId(req.query.userId);
-
-        //                 const friend = await usersCollection.findOne(
-        //                     { _id: friendId },
-        //                     {
-        //                         projection: {
-        //                             _id: 1,
-        //                             name: 1,
-        //                             username: 1,
-        //                             profile: { profilePhotoUrl: 1 },
-        //                             onlineStatus: 1,
-        //                         },
-        //                     }
-        //                 );
-
-        //                 if (!friend) return res.status(404).send({ message: "Friend not found" });
-
-        //                 const chatRoom = await chatRoomsCollection.findOne({
-        //                     participants: { $all: [userId, friendId] },
-        //                 });
-
-        //                 if (!chatRoom) {
-        //                     return res.send({
-        //                         friend,
-        //                         messages: [],
-        //                     });
-        //                 }
-
-        //                 const messageIds = chatRoom.messages.map((m) => new ObjectId(m.messageId));
-
-        //                 let messages = await chatsCollection
-        //                     .find({ _id: { $in: messageIds } })
-        //                     .sort({ createdAt: 1 })
-        //                     .toArray();
-
-        //                 const userIds = [...new Set(messages.flatMap(m => [m.senderId.toString(), m.receiverId.toString()]))]
-        //                     .map(id => new ObjectId(id));
-
-        //                 const users = await usersCollection
-        //                     .find({ _id: { $in: userIds } })
-        //                     .project({ _id: 1, name: 1, username: 1, "profile.profilePhotoUrl": 1 })
-        //                     .toArray();
-
-        //                 const usersMap = {};
-        //                 users.forEach(u => {
-        //                     usersMap[u._id.toString()] = u;
-        //                 });
-
-        //                 messages = messages.map(msg => ({
-        //                     ...msg,
-        //                     sender: usersMap[msg.senderId.toString()],
-        //                     receiver: usersMap[msg.receiverId.toString()],
-        //                 }));
-
-        //                 res.send({
-        //                     friend,
-        //                     messages,
-        //                 });
-
-        //             } catch (error) {
-        //                 console.error("Error fetching messages:", error);
-        //                 res.status(500).send("Failed to fetch messages");
-        //             }
-        //         });
-
-        //         app.post("/message/send", async (req, res) => {
-        //             try {
-        //                 const { senderId, receiverId, message } = req.body;
-
-        //                 const sender = new ObjectId(senderId);
-        //                 const receiver = new ObjectId(receiverId);
-
-        //                 // 1️⃣ Step: message save করো
-        //                 const messageData = {
-        //                     senderId: sender,
-        //                     receiverId: receiver,
-        //                     message,
-        //                     createdAt: new Date(),
-        //                     updatedAt: new Date(),
-        //                 };
-
-        //                 const messageResult = await chatsCollection.insertOne(messageData);
-        //                 const messageId = messageResult.insertedId;
-
-        //                 // 2️⃣ Step: chatRoomsCollection এ pair check করো
-        //                 const existingChatRoom = await chatRoomsCollection.findOne({
-        //                     participants: { $all: [sender, receiver] },
-        //                 });
-
-        //                 const messageRef = {
-        //                     messageId,
-        //                     sentAt: messageData.createdAt,
-        //                 };
-
-        //                 if (existingChatRoom) {
-        //                     // pair already exists → শুধু messageRef push করো
-        //                     await chatRoomsCollection.updateOne(
-        //                         { _id: existingChatRoom._id },
-        //                         {
-        //                             $push: { messages: messageRef },
-        //                             $set: { lastUpdated: new Date() },
-        //                         }
-        //                     );
-        //                 } else {
-        //                     // নতুন conversation তৈরি করো
-        //                     await chatRoomsCollection.insertOne({
-        //                         participants: [sender, receiver],
-        //                         messages: [messageRef],
-        //                         lastUpdated: new Date(),
-        //                     });
-        //                 }
-
-        //                 res.status(200).send({
-        //                     success: true,
-        //                     message: "Message sent successfully",
-        //                     messageId,
-        //                 });
-        //             } catch (error) {
-        //                 console.error("Error sending message:", error);
-        //                 res.status(500).send("Failed to send message");
-        //             }
-        //         });
-
-        //         app.delete("/message/:id", async (req, res) => {
-        //             try {
-        //                 const msgId = new ObjectId(req.params.id);
-        //                 await chatsCollection.deleteOne({ _id: msgId });
-        //                 res.send({ success: true });
-        //             } catch (err) {
-        //                 console.error(err);
-        //                 res.status(500).send({ success: false, message: "Failed to delete message" });
-        //             }
-        //         });
-
-        //         app.put("/message/:id", async (req, res) => {
-        //             try {
-        //                 const msgId = new ObjectId(req.params.id);
-        //                 const { message } = req.body;
-        //                 await chatsCollection.updateOne(
-        //                     { _id: msgId },
-        //                     { $set: { message, updatedAt: new Date() } }
-        //                 );
-        //                 res.send({ success: true });
-        //             } catch (err) {
-        //                 console.error(err);
-        //                 res.status(500).send({ success: false, message: "Failed to update message" });
-        //             }
-        //         });
-        //     }
-
-        //     finally { }
-        // }
-        // run().catch(console.dir);
-
-
-        // app.get("/", (req, res) => {
-        //     res.send("XENON MEDIA v2 MONGO_ATLAS 🟢 ON");
-        // })
-
-
-        // app.listen(port, () => {
-        //     console.log('MONGO_ATLAS 🟢 ON', port);
-        // })
-
-        // module.exports = app;
-
-
-
-        // ============================
-        // 🔹 GET Chat List
-        // ============================
-
 
 
 

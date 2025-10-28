@@ -2,8 +2,8 @@ const sharp = require("sharp");
 const axios = require("axios");
 
 const userModel = require("../models/userModel");
-const postModel = require("../models/postModel");
-const verifyJWT = require("../middlewares/verifyJWT");
+const postModel = require("../posts/postModel");
+const verifyJWT = require("../../../middlewares/verifyJWT");
 
 
 const userTimers = new Map();

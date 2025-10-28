@@ -3,7 +3,7 @@ const router = express.Router();
 
 const userModel = require("../models/userModel");
 const postModel = require("../models/postModel");
-const verifyJWT = require("../middlewares/verifyJWT");
+const verifyJWT = require("../../middlewares/verifyJWT");
 const { default: mongoose } = require("mongoose");
 
 router.get("/", async (req, res) => {

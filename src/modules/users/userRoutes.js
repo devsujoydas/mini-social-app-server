@@ -2,8 +2,8 @@ const express = require("express");
 const multer = require("multer");
 
 const userModel = require("../models/userModel");
-const postModel = require("../models/postModel");
-const verifyJWT = require("../middlewares/verifyJWT");
+const postModel = require("../posts/postModel");
+const verifyJWT = require("../../../middlewares/verifyJWT");
 const {getUserProfile, makeAdmin, removeAdmin, uploadProfile ,activeStatus} = require("../controllers/userController");
 
 const router = express.Router();
