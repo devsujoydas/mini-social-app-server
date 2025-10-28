@@ -3,16 +3,16 @@ const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
-const connectDB = require("./utils/db");
-const authRoutes = require("./routes/authRoutes");
-const userRoutes = require("./routes/userRoutes");
-const postRoutes = require("./routes/postRoutes");
-const friendRoutes = require("./routes/friendRoutes"); 
+const connectDB = require("./src/configs/connectDB");
+const authRoutes = require("./src/modules/auth/authRoutes");
+const userRoutes = require("./src/modules/users/userRoutes");
+const postRoutes = require("./src/modules/posts/postRoutes");
+const friendRoutes = require("./src/modules/friends/friendRoutes");
+const { PORT } = require("./src/configs/config");
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = PORT || 3000;
 
-// Middleware
 app.use(
   cors({
     origin: [
@@ -25,23 +25,20 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-  
+
 connectDB();
 
-
-
-// Routes
-app.use("/auth", authRoutes);
-app.use("/users", userRoutes);
-app.use("/posts", postRoutes);
-app.use("/friends", friendRoutes);
+app.use("/api/v2/auth", authRoutes);
+app.use("/api/v2/users", userRoutes);
+app.use("/api/v2/posts", postRoutes);
+app.use("/api/v2/friends", friendRoutes);
 
 app.get("/", (req, res) =>
   res.send("🟢 Xenon Media Connected With Server & MongoDB")
 );
 
-app.listen(port, () =>
-  console.log(`🟢 Mongoose Server running on port ${port}`)
-);
+app.listen(port, () => {
+  console.log(`🟢 Mongoose Server running on port ${port}`);
+});
 
 module.exports = app;
