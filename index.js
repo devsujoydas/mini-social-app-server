@@ -47,11 +47,11 @@ const io = new Server(server, {
 const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
-    console.log("🟢 New user connected:", socket.id);
+    // console.log("New user connected:", socket.id);
 
     socket.on("join_room", (userId) => {
         onlineUsers.set(userId, socket.id);
-        console.log("User joined:", userId);
+        // console.log("User joined:", userId);
     });
 
     socket.on("send_message", (msgData) => {
@@ -61,7 +61,6 @@ io.on("connection", (socket) => {
         }
     });
 
-    // 🔴 disconnect হলে map থেকে user remove
     socket.on("disconnect", () => {
         for (let [userId, sockId] of onlineUsers.entries()) {
             if (sockId === socket.id) {
@@ -91,8 +90,10 @@ async function run() {
         const postsCollection = client.db("mini-social-app").collection("posts")
         const chatRoomsCollection = client.db("mini-social-app").collection("chatRoom")
         const chatsCollection = client.db("mini-social-app").collection("chats")
+        const commentsCollection = client.db("mini-social-app").collection("comments")
 
-        console.log("Pinged your deployment. You successfully connected to MongoDB! 🟢");
+
+        console.log("Pinged your deployment. You successfully connected to MongoDB!");
 
         const verifyJWT = (req, res, next) => {
             const token = req.headers.authorization?.split(" ")[1];
@@ -105,16 +106,17 @@ async function run() {
             });
         };
 
-        const createTokens = (email) => ({
-            accessToken: jwt.sign({ email }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" }),
-            refreshToken: jwt.sign({ email }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" }),
+        const createTokens = (email, _id) => ({
+            accessToken: jwt.sign({ email, _id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "15m" }),
+            refreshToken: jwt.sign({ email, _id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" }),
         });
 
-        app.post("/jwt", (req, res) => {
+        app.post("/jwt", async (req, res) => {
             const { email } = req.body;
             if (!email) return res.status(400).json({ message: "Email required" });
 
-            const { accessToken, refreshToken } = createTokens(email);
+            const loggedUser = await usersCollection.findOne({ email })
+            const { accessToken, refreshToken } = createTokens(email, loggedUser._id);
 
             res.cookie("refreshToken", refreshToken, {
                 httpOnly: true,
@@ -149,9 +151,6 @@ async function run() {
             });
             res.json({ success: true });
         });
-
-
-
 
         app.post("/auth/signup", async (req, res) => {
             try {
@@ -279,79 +278,74 @@ async function run() {
                     { $match: { email } },
 
                     // posts populate
-                    {
-                        $lookup: {
-                            from: "posts",
-                            localField: "posts",
-                            foreignField: "_id",
-                            as: "posts"
-                        }
-                    },
+                    { $lookup: { from: "posts", localField: "posts", foreignField: "_id", as: "posts" } },
 
                     // savePosts populate
-                    {
-                        $lookup: {
-                            from: "posts",
-                            localField: "savePosts",
-                            foreignField: "_id",
-                            as: "savePosts"
-                        }
-                    },
+                    { $lookup: { from: "posts", localField: "savePosts", foreignField: "_id", as: "savePosts" } },
 
                     // myFriends populate
-                    {
-                        $lookup: {
-                            from: "users",
-                            localField: "myFriends",
-                            foreignField: "_id",
-                            as: "myFriends"
-                        }
-                    },
+                    { $lookup: { from: "users", localField: "myFriends", foreignField: "_id", as: "myFriends" } },
 
                     // friendRequests populate
-                    {
-                        $lookup: {
-                            from: "users",
-                            localField: "friendRequests",
-                            foreignField: "_id",
-                            as: "friendRequests"
-                        }
-                    },
+                    { $lookup: { from: "users", localField: "friendRequests", foreignField: "_id", as: "friendRequests" } },
 
                     // sentRequests populate
-                    {
-                        $lookup: {
-                            from: "users",
-                            localField: "sentRequests",
-                            foreignField: "_id",
-                            as: "sentRequests"
-                        }
-                    }
+                    { $lookup: { from: "users", localField: "sentRequests", foreignField: "_id", as: "sentRequests" } }
                 ]).toArray();
 
                 if (!user || !user.length) return res.status(404).json({ message: "User not found" });
 
-                res.json(user[0]); // aggregate result array দেয়, তাই [0]
+                res.json(user[0]);
             } catch (err) {
                 res.status(500).json({ message: "Server error", error: err.message });
             }
         });
-
-
-        app.get("/updateInfo/:id", async (req, res) => {
-            const userEmail = req.params.id;
-            const user = await usersCollection.findOne({ email: userEmail })
-            res.send(user)
-        });
         app.put("/update", async (req, res) => {
-            const { name, email, address, bio, profilephotourl, coverphotourl, phone, website } = req.body;
-            const query = { email }
-            const updatedUser = { $set: { name, address, bio, profilephotourl, coverphotourl, phone, website } }
-            const result = await usersCollection.updateMany(query, updatedUser)
-            res.send(result)
-            return
+            try {
+                const { email, name, profile, contactInfo, location } = req.body;
 
-        })
+                if (!email) return res.status(400).json({ error: "Email is required" });
+
+                const query = { email };
+
+                const updatedFields = {};
+                if (name) updatedFields.name = name;
+
+                if (profile) {
+                    for (const key in profile) {
+                        if (profile[key] !== undefined) {
+                            updatedFields[`profile.${key}`] = profile[key];
+                        }
+                    }
+                }
+
+                if (contactInfo) {
+                    for (const key in contactInfo) {
+                        if (contactInfo[key] !== undefined) {
+                            updatedFields[`contactInfo.${key}`] = contactInfo[key];
+                        }
+                    }
+                }
+
+                if (location) {
+                    for (const key in location) {
+                        if (location[key] !== undefined) {
+                            updatedFields[`location.${key}`] = location[key];
+                        }
+                    }
+                }
+
+                const result = await usersCollection.updateOne(query, { $set: updatedFields });
+
+                res.status(200).json({
+                    message: result.modifiedCount > 0 ? "Profile updated successfully" : "No changes applied",
+                    modifiedCount: result.modifiedCount,
+                });
+            } catch (err) {
+                console.error("Error updating profile:", err);
+                res.status(500).json({ error: "Server error while updating profile" });
+            }
+        });
         app.put("/updateUsername", async (req, res) => {
             const { email, username } = req.body;
             const user = await usersCollection.findOne({ username: username })
@@ -366,46 +360,32 @@ async function run() {
                 return res.send({ message: "This username already existed" })
             }
         })
-        app.delete("/profile/delete/:email", async (req, res) => {
-            const email = req.params.email;
+        app.delete("/profile/delete/:id", async (req, res) => {
+            const userId = req.params.id;
+
+            if (!ObjectId.isValid(userId)) {
+                return res.status(400).json({ error: "Invalid user ID" });
+            }
+
+            const objectUserId = new ObjectId(userId);
 
             try {
-                // Optional: Auth header check
-                // if (req.headers.authorization !== process.env.ADMIN_SECRET) {
-                //   return res.status(403).json({ error: "Unauthorized" });
-                // }
-
-                // Delete user
-                const userResult = await usersCollection.deleteOne({ email });
-
-                // Delete all posts
-                const postsDeleted = await postsCollection.deleteMany({ authorEmail: email });
-
-                // Delete all comments (fallback if collection doesn't exist)
-                const commentsDeleted = commentsCollection
-                    ? await commentsCollection.deleteMany({ authorEmail: email })
-                    : { deletedCount: 0 };
-
-                // Remove likes from all posts
-                const likesRemoved = await postsCollection.updateMany(
-                    {},
-                    { $pull: { likes: { userEmail: email } } }
-                );
-
-                // Remove from other users' friend/request lists
-                const friendsCleaned = await usersCollection.updateMany(
-                    {},
-                    {
+                const [userResult, postsDeleted, commentsDeleted, likesRemoved, friendsCleaned] = await Promise.all([
+                    usersCollection.deleteOne({ _id: objectUserId }),
+                    postsCollection.deleteMany({ authorId: objectUserId }),
+                    commentsCollection?.deleteMany({ authorId: objectUserId }) || Promise.resolve({ deletedCount: 0 }),
+                    postsCollection.updateMany({}, { $pull: { likes: { _id: objectUserId } } }),
+                    usersCollection.updateMany({}, {
                         $pull: {
-                            friends: { email: email },
-                            sentRequests: { email: email },
-                            receivedRequests: { email: email },
+                            friends: { _id: objectUserId },
+                            sentRequests: { _id: objectUserId },
+                            receivedRequests: { _id: objectUserId },
                         },
-                    }
-                );
+                    }),
+                ]);
 
-                res.status(200).send({
-                    message: "✅ Account and related data deleted successfully",
+                res.status(200).json({
+                    message: "Account and related data deleted successfully",
                     userDeleted: userResult.deletedCount,
                     postsDeleted: postsDeleted.deletedCount,
                     commentsDeleted: commentsDeleted.deletedCount,
@@ -492,7 +472,7 @@ async function run() {
         app.get("/posts", async (req, res) => {
             try {
                 const authorId = req.query.authorId;
-                const query = authorId ? { authorId: new ObjectId(authorId) } : {}; // Filter if authorId exists
+                const query = authorId ? { authorId: new ObjectId(authorId) } : {};
 
                 const totalCount = await postsCollection.countDocuments(query);
                 if (totalCount === 0) return res.send([]);
@@ -539,7 +519,7 @@ async function run() {
                                         _id: "$$user._id",
                                         name: "$$user.name",
                                         username: "$$user.username",
-                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl", // fixed casing
+                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl",
                                     },
                                 },
                             },
@@ -556,7 +536,6 @@ async function run() {
         app.get("/post/:id", async (req, res) => {
             try {
                 const { id } = req.params;
-
                 if (!ObjectId.isValid(id)) {
                     return res.status(400).json({ message: "Invalid post ID" });
                 }
@@ -564,8 +543,6 @@ async function run() {
                 const postObjectId = new ObjectId(id);
                 const post = await postsCollection.aggregate([
                     { $match: { _id: postObjectId } },
-
-                    // Join with author info
                     {
                         $lookup: {
                             from: "users",
@@ -623,6 +600,194 @@ async function run() {
                 res.status(500).json({ message: "Failed to fetch post" });
             }
         });
+        app.get("/post/update/:id", async (req, res) => {
+            try {
+                const { id } = req.params;
+                if (!ObjectId.isValid(id)) {
+                    return res.status(400).json({ message: "Invalid post ID" });
+                }
+
+                const postObjectId = new ObjectId(id);
+                const post = await postsCollection.aggregate([
+                    { $match: { _id: postObjectId } },
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "authorId",
+                            foreignField: "_id",
+                            as: "authorInfo",
+                        },
+                    },
+                    { $unwind: "$authorInfo" },
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "likes",
+                            foreignField: "_id",
+                            as: "likesInfo",
+                        },
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            content: 1,
+                            createdAt: 1,
+                            updatedAt: 1,
+                            shares: 1,
+                            comments: 1,
+                            author: {
+                                _id: "$authorInfo._id",
+                                name: "$authorInfo.name",
+                                username: "$authorInfo.username",
+                                profilePhotoUrl: "$authorInfo.profile.profilePhotoUrl",
+                            },
+                            likes: {
+                                $map: {
+                                    input: "$likesInfo",
+                                    as: "user",
+                                    in: {
+                                        _id: "$$user._id",
+                                        name: "$$user.name",
+                                        username: "$$user.username",
+                                        profilePhotoUrl: "$$user.profile.profilePhotoUrl",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ]).toArray();
+
+                if (!post || post.length === 0) {
+                    return res.status(404).json({ message: "Post not found" });
+                }
+
+                res.status(200).json(post[0]);
+            } catch (error) {
+                console.error("Error fetching post:", error);
+                res.status(500).json({ message: "Failed to fetch post" });
+            }
+        });
+
+        app.post("/post", async (req, res) => {
+            try {
+                const postData = req.body;
+
+                postData.authorId = new ObjectId(postData.authorId);
+
+                const existingPost = await postsCollection.findOne({
+                    "content.postImageUrl": postData.content.postImageUrl,
+                });
+                if (existingPost)
+                    return res.status(409).send("This Image URL was already taken");
+
+                const result = await postsCollection.insertOne(postData);
+
+                const newPostId = result.insertedId;
+
+                const userUpdateResult = await usersCollection.updateOne(
+                    { _id: new ObjectId(postData.authorId) },
+                    { $push: { posts: newPostId } }
+                );
+
+                res.send({ result, userUpdateResult });
+            } catch (error) {
+                console.error("Error creating post:", error);
+                res.status(500).send("Failed to create post");
+            }
+        });
+
+        app.put("/post/like/:id", async (req, res) => {
+            const { userId } = req.body;
+            const postId = req.params.id;
+
+            try {
+                const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
+                if (!post) return res.status(404).json({ message: "Post not found" });
+
+                const userObjectId = new ObjectId(userId);
+                const alreadyLiked = post.likes?.some(
+                    (id) => id.toString() === userId
+                );
+
+                let updateResult;
+                if (alreadyLiked) {
+                    updateResult = await postsCollection.updateOne(
+                        { _id: new ObjectId(postId) },
+                        { $pull: { likes: userObjectId } }
+                    );
+                    return res.status(200).json({ message: "Disliked", result: updateResult });
+                } else {
+                    updateResult = await postsCollection.updateOne(
+                        { _id: new ObjectId(postId) },
+                        { $addToSet: { likes: userObjectId } }
+                    );
+                    return res.status(200).json({ message: "Liked", result: updateResult });
+                }
+            } catch (error) {
+                console.error("Error in like route:", error);
+                return res.status(500).json({ message: "Internal server error" });
+            }
+        });
+        app.put("/post/update/:id", async (req, res) => {
+            try {
+                const { postContent, postImageUrl, lastUpdateDate } = req.body;
+                const id = req.params.id;
+                const query = { _id: new ObjectId(id) };
+
+                const updatedPost = {
+                    $set: {
+                        "content.text": postContent,
+                        "content.postImageUrl": postImageUrl,
+                        updatedAt: lastUpdateDate,
+                    },
+                };
+
+                const result = await postsCollection.updateOne(query, updatedPost);
+                console.log(req.user)
+                const allPost = await postsCollection.find({ authorId: new ObjectId() })
+                res.send(result);
+            } catch (error) {
+                console.error("Error updating post:", error);
+                res.status(500).send("Failed to update post");
+            }
+        });
+        app.delete("/post/:id", async (req, res) => {
+            const postId = req.params.id;
+            try {
+                const query = { _id: new ObjectId(postId) };
+                const post = await postsCollection.findOne(query);
+                if (!post) return res.status(404).send({ message: "Post not found." });
+
+                const authorEmail = post.authorEmail;
+                if (authorEmail) {
+                    try {
+                        await usersCollection.updateOne(
+                            { email: authorEmail },
+                            { $pull: { posts: post._id } }
+                        );
+                    } catch (updateError) {
+                        console.error(
+                            `Error updating user ${authorEmail}'s posts array:`,
+                            updateError
+                        );
+                    }
+                }
+
+                const deleteResult = await postsCollection.deleteOne(query);
+                if (deleteResult.deletedCount === 0) {
+                    return res
+                        .status(500)
+                        .send({ message: "Failed to delete post from database." });
+                }
+
+                res.send(deleteResult);
+            } catch (error) {
+                res.status(500).send({ message: "An internal server error occurred." });
+            }
+        });
+
+
+
         app.get("/savedPosts", async (req, res) => {
             try {
                 const { userId } = req.query;
@@ -691,9 +856,6 @@ async function run() {
                 res.status(500).send("Failed to fetch saved posts");
             }
         });
-
-
-
         app.put("/savePost", async (req, res) => {
 
             try {
@@ -748,128 +910,20 @@ async function run() {
 
 
 
-        app.put("/post/like/:id", async (req, res) => {
-            const { userId } = req.body; // frontend থেকে আসবে string
-            const postId = req.params.id;
-
-            try {
-                const post = await postsCollection.findOne({ _id: new ObjectId(postId) });
-                if (!post) return res.status(404).json({ message: "Post not found" });
-
-                const userObjectId = new ObjectId(userId);
-
-                const alreadyLiked = post.likes?.some(
-                    (id) => id.toString() === userId // ObjectId compare
-                );
-
-                let updateResult;
-                if (alreadyLiked) {
-                    // Dislike
-                    updateResult = await postsCollection.updateOne(
-                        { _id: new ObjectId(postId) },
-                        { $pull: { likes: userObjectId } }
-                    );
-                    return res.status(200).json({ message: "Disliked", result: updateResult });
-                } else {
-                    // Like
-                    updateResult = await postsCollection.updateOne(
-                        { _id: new ObjectId(postId) },
-                        { $addToSet: { likes: userObjectId } } // duplicate না হবে
-                    );
-                    return res.status(200).json({ message: "Liked", result: updateResult });
-                }
-            } catch (error) {
-                console.error("Error in like route:", error);
-                return res.status(500).json({ message: "Internal server error" });
-            }
-        });
-        app.post("/post", async (req, res) => {
-            const postData = req.body;
-            const existingPost = await postsCollection.findOne({ postImageUrl: postData.postImageUrl });
-            if (existingPost) return res.status(409).send("This Image URL was already taken");
-
-            const result = await postsCollection.insertOne(postData);
-
-            const newPostId = result.insertedId;
-            const userEmail = postData.authorEmail;
-            const userUpdateResult = await usersCollection.updateOne({ email: userEmail }, { $push: { posts: newPostId } });
-
-            const data = { result, userUpdateResult }
-            res.send(data)
-
-        });
-
-        app.get("/post/update/:id", async (req, res) => {
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            res.send(post)
-        })
-        app.put("/post/update/:id", async (req, res) => {
-            const { postImageUrl, postContent, lastUpdateDate } = req.body;
-            const id = req.params.id;
-            const post = await postsCollection.findOne({ _id: new ObjectId(id) })
-            const query = { postImageUrl }
-            const updatedPost = { $set: { postContent, lastUpdateDate } }
-            const result = await postsCollection.updateMany(query, updatedPost)
-            res.send(result)
-        })
-        app.delete("/post/delete/:id", async (req, res) => {
-            const postId = req.params.id;
-            try {
-                const query = { _id: new ObjectId(postId) };
-                const post = await postsCollection.findOne(query);
-
-                if (!post) return res.status(404).send({ message: "Post not found." });
-
-                const authorEmail = post.authorEmail;
-                if (!authorEmail) console.warn(`Post ${postId} does not have an authorEmail. Cannot update user's posts array.`);
-
-                let userUpdateSuccess = false;
-                if (authorEmail) {
-                    try {
-                        const userUpdateResult = await usersCollection.updateOne(
-                            { email: authorEmail },
-                            { $pull: { posts: post._id } }
-                        );
-                        if (userUpdateResult.modifiedCount > 0) {
-                            userUpdateSuccess = true;
-                        } else {
-                        }
-                    } catch (updateError) {
-                        console.error(`Error updating user ${authorEmail}'s posts array:`, updateError);
-                    }
-                }
-                const deleteResult = await postsCollection.deleteOne(query);
-                if (deleteResult.deletedCount === 0) {
-                    return res.status(500).send({ message: "Failed to delete post from database." });
-                }
-                res.send(deleteResult)
-            } catch (error) {
-                res.status(500).send({ message: "An internal server error occurred." });
-            }
-        });
-
-
-
-
-        // Friends Related Apis
         app.get("/profile/:id", async (req, res) => {
             try {
                 const id = req.params.id;
                 const userId = new ObjectId(id);
 
-                // Step 1: Friend/User info
                 const friend = await usersCollection.findOne({ _id: userId });
                 if (!friend) return res.status(404).send({ message: "User not found" });
 
-                // Step 2: Query posts of that user
                 const query = { authorId: userId };
 
                 const totalCount = await postsCollection.countDocuments(query);
                 if (totalCount === 0)
                     return res.send({ friend, friendPost: [] });
 
-                // Step 3: Aggregate posts with author & likes info
                 const posts = await postsCollection
                     .aggregate([
                         { $match: query },
